@@ -4,6 +4,8 @@ A lightweight, single-file chat UI for talking to a **locally running LLM** — 
 
 Everything (HTML, CSS, and JavaScript) lives in one `index.html` file.
 
+Try it here: https://pietercooreman.github.io/Synapse/
+
 ## Features
 
 - **Streaming responses** — tokens render live as the model generates them.
