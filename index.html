@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synapse &middot; Local AI</title>
+
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- highlight.js for code syntax highlighting (theme swapped at runtime) -->
+    <link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+
+    <!-- Markdown parser + syntax highlighter + HTML sanitizer -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
+    <style>
+        :root { --chat-max: 900px; }
+
+        html, body { height: 100%; }
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+
+        #chat-container {
+            width: 100%;
+            max-width: var(--chat-max);
+            height: auto;          /* size to content... */
+            max-height: 95vh;      /* ...but never taller than the viewport */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 1rem;
+        }
+
+        #chat-history {
+            flex: 1 1 auto;
+            min-height: 0;          /* allow it to shrink/scroll inside the flex card */
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            line-height: 1.55;
+            word-wrap: break-word;
+        }
+        .user-message {
+            align-self: flex-end;
+            border-bottom-right-radius: 0.15rem;
+            white-space: pre-wrap;
+        }
+        .bot-message {
+            align-self: flex-start;
+            border-bottom-left-radius: 0.15rem;
+            min-width: 260px;
+        }
+        .system-error { align-self: center; max-width: 95%; }
+
+        /* Markdown internals */
+        .message p { margin: 0 0 0.6rem 0; }
+        .message p:last-child { margin: 0; }
+        .message ul, .message ol { margin: 0 0 0.6rem 0; padding-left: 1.25rem; }
+        .message li { margin-bottom: 0.25rem; }
+        .message :not(pre) > code {
+            font-size: 0.875em;
+            padding: 0.15em 0.35em;
+            border-radius: 0.3rem;
+            background: var(--bs-tertiary-bg);
+        }
+
+        /* Code block wrapper with per-block copy button */
+        .code-block { position: relative; margin: 0.75rem 0; }
+        .code-block pre {
+            margin: 0;
+            border-radius: 0.6rem;
+            overflow-x: auto;
+        }
+        .code-block pre code {
+            display: block;
+            padding: 1rem;
+            font-size: 0.85rem;
+            border-radius: 0.6rem;
+        }
+        .code-lang {
+            position: absolute;
+            top: 0.4rem;
+            left: 0.7rem;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            opacity: 0.55;
+            user-select: none;
+            pointer-events: none;
+        }
+        .code-copy-btn {
+            position: absolute;
+            top: 0.4rem;
+            right: 0.4rem;
+            opacity: 0;
+            transition: opacity 0.15s;
+            z-index: 2;
+        }
+        .code-block:hover .code-copy-btn { opacity: 1; }
+
+        .message-meta {
+            font-size: 0.72rem;
+            margin-top: 0.6rem;
+            padding-top: 0.45rem;
+            border-top: 1px solid var(--bs-border-color);
+            font-family: var(--bs-font-monospace);
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+
+        #user-input {
+            resize: none;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .typing-dots span {
+            display: inline-block;
+            width: 6px; height: 6px;
+            margin: 0 1px;
+            border-radius: 50%;
+            background: currentColor;
+            opacity: 0.4;
+            animation: blink 1.2s infinite;
+        }
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
+
+        #chat-history::-webkit-scrollbar { width: 10px; }
+        #chat-history::-webkit-scrollbar-thumb {
+            background: var(--bs-border-color);
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="bg-body-tertiary">
+
+    <div id="chat-container" class="card shadow-lg border">
+
+        <!-- Header -->
+        <div class="card-header d-flex align-items-center justify-content-between py-3 px-4">
+            <div class="d-flex align-items-center gap-2">
+                <span class="fs-5 fw-semibold">Synapse</span>
+                <span id="status-dot" class="badge rounded-pill text-bg-secondary" title="Idle">
+                    <i class="bi bi-circle-fill" style="font-size:.5rem"></i>
+                </span>
+            </div>
+            <div class="d-flex align-items-center gap-1">
+                <button id="prompt-btn" class="btn btn-sm btn-outline-secondary border-0" title="Edit system prompt"
+                        data-bs-toggle="modal" data-bs-target="#prompt-modal">
+                    <i class="bi bi-sliders"></i>
+                </button>
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-outline-secondary border-0 dropdown-toggle" title="Export conversation"
+                            data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-download"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><button id="export-md-btn" class="dropdown-item"><i class="bi bi-markdown me-2"></i>Markdown (.md)</button></li>
+                        <li><button id="export-json-btn" class="dropdown-item"><i class="bi bi-filetype-json me-2"></i>JSON (.json)</button></li>
+                    </ul>
+                </div>
+                <button id="clear-btn" class="btn btn-sm btn-outline-secondary border-0" title="Clear conversation">
+                    <i class="bi bi-trash3"></i>
+                </button>
+                <button id="theme-btn" class="btn btn-sm btn-outline-secondary border-0" title="Toggle theme">
+                    <i class="bi bi-moon-stars-fill"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Settings -->
+        <div class="card-body border-bottom py-2 px-4">
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-sm-4">
+                    <label for="provider-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Backend</label>
+                    <select id="provider-select" class="form-select form-select-sm">
+                        <option value="lm-studio">LM Studio (1234)</option>
+                        <option value="ollama">Ollama (11434)</option>
+                    </select>
+                </div>
+                <div class="col-12 col-sm-5">
+                    <label for="model-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Model</label>
+                    <div class="input-group input-group-sm">
+                        <select id="model-select" class="form-select form-select-sm"></select>
+                        <button id="refresh-models-btn" class="btn btn-outline-secondary" title="Refresh model list">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-12 col-sm-3">
+                    <label for="temp-range" class="form-label small text-uppercase fw-bold opacity-75 mb-1">
+                        Temp <span id="temp-value" class="text-primary">0.7</span>
+                    </label>
+                    <input type="range" id="temp-range" class="form-range" min="0" max="2" step="0.1" value="0.7">
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat history (populated on load: restored conversation or welcome message) -->
+        <div id="chat-history" class="p-4"></div>
+
+        <!-- Input -->
+        <div class="card-footer p-3">
+            <div class="d-flex gap-2 align-items-end">
+                <textarea id="user-input" class="form-control"
+                    placeholder="Type your message… (Shift + Enter for newline)"
+                    autocomplete="off" rows="1"></textarea>
+                <button id="regenerate-btn" class="btn btn-outline-secondary" title="Regenerate last reply" disabled>
+                    <i class="bi bi-arrow-repeat"></i>
+                </button>
+                <button id="send-btn" class="btn btn-primary px-3" title="Send">
+                    <i class="bi bi-send-fill"></i>
+                </button>
+                <button id="cancel-btn" class="btn btn-danger px-3 d-none" title="Stop generating">
+                    <i class="bi bi-stop-fill"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- System prompt modal -->
+    <div class="modal fade" id="prompt-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-sliders me-2"></i>System Prompt</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small opacity-75">
+                        This instruction guides the assistant's behavior. Changing it resets the conversation.
+                    </p>
+                    <textarea id="prompt-input" class="form-control font-monospace" rows="8"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button id="prompt-reset-btn" class="btn btn-outline-secondary me-auto">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>Reset to default
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button id="prompt-save-btn" class="btn btn-primary" data-bs-dismiss="modal">
+                        <i class="bi bi-check2 me-1"></i>Save &amp; restart chat
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        /* ---------- Element refs ---------- */
+        const chatHistory   = document.getElementById('chat-history');
+        const userInput     = document.getElementById('user-input');
+        const sendBtn       = document.getElementById('send-btn');
+        const cancelBtn     = document.getElementById('cancel-btn');
+        const regenerateBtn = document.getElementById('regenerate-btn');
+        const clearBtn      = document.getElementById('clear-btn');
+        const themeBtn      = document.getElementById('theme-btn');
+        const providerSelect= document.getElementById('provider-select');
+        const modelSelect   = document.getElementById('model-select');
+        const refreshBtn    = document.getElementById('refresh-models-btn');
+        const tempRange     = document.getElementById('temp-range');
+        const tempValue     = document.getElementById('temp-value');
+        const statusDot     = document.getElementById('status-dot');
+        const hljsTheme     = document.getElementById('hljs-theme');
+
+        let currentAbortController = null;
+
+        /* ---------- marked + highlight.js ---------- */
+        marked.setOptions({
+            highlight: (code, lang) =>
+                (lang && hljs.getLanguage(lang))
+                    ? hljs.highlight(code, { language: lang }).value
+                    : hljs.highlightAuto(code).value,
+            langPrefix: 'hljs language-'
+        });
+
+        const DEFAULT_SYSTEM_PROMPT = "You are Synapse, an expert coding assistant. You provide clear answers formatted in Markdown. IMPORTANT: You must ALWAYS wrap HTML, CSS, JavaScript, and any other code snippets inside triple backtick (```) Markdown code blocks, and label the language after the opening backticks.";
+        let SYSTEM_PROMPT = localStorage.getItem('synapse-system-prompt') || DEFAULT_SYSTEM_PROMPT;
+
+        const configs = {
+            'lm-studio': {
+                base: "http://127.0.0.1:1234",
+                models: ["local-model"]
+            },
+            'ollama': {
+                base: "http://127.0.0.1:11434",
+                models: []
+            }
+        };
+
+        let messagesContext = [{ role: "system", content: SYSTEM_PROMPT }];
+
+        /* ---------- Conversation persistence ---------- */
+        const HISTORY_KEY = 'synapse-history';
+
+        function saveHistory() {
+            try {
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(messagesContext));
+            } catch (e) { console.warn('Could not save history', e); }
+        }
+
+        function loadHistory() {
+            try {
+                const raw = localStorage.getItem(HISTORY_KEY);
+                if (!raw) return false;
+                const saved = JSON.parse(raw);
+                if (!Array.isArray(saved) || saved.length === 0) return false;
+                messagesContext = saved;
+                // Keep the system prompt in sync with whatever was stored.
+                if (saved[0]?.role === 'system') SYSTEM_PROMPT = saved[0].content;
+                return true;
+            } catch (e) {
+                console.warn('Could not load history', e);
+                return false;
+            }
+        }
+
+        function renderHistory() {
+            chatHistory.innerHTML = '';
+            let hasTurns = false;
+            messagesContext.forEach(m => {
+                if (m.role === 'user') { addMessageToUI(m.content, 'user-message'); hasTurns = true; }
+                else if (m.role === 'assistant') {
+                    const bot = addMessageToUI(m.content, 'bot-message');
+                    appendCopyMeta(bot, m.content);
+                    hasTurns = true;
+                }
+            });
+            if (hasTurns) regenerateBtn.disabled = false;
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            return hasTurns;
+        }
+
+        /* ---------- Theme handling ---------- */
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-bs-theme', theme);
+            const icon = themeBtn.querySelector('i');
+            const dark = theme === 'dark';
+            icon.className = dark ? 'bi bi-moon-stars-fill' : 'bi bi-sun-fill';
+            hljsTheme.href = dark
+                ? "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css"
+                : "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css";
+            localStorage.setItem('synapse-theme', theme);
+        }
+        themeBtn.addEventListener('click', () => {
+            const next = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+            applyTheme(next);
+        });
+        applyTheme(localStorage.getItem('synapse-theme') || 'dark');
+
+        /* ---------- Status indicator ---------- */
+        function setStatus(state) {
+            // state: idle | busy | error | ok
+            const map = {
+                idle:  ['text-bg-secondary', 'Idle'],
+                busy:  ['text-bg-warning',   'Generating…'],
+                error: ['text-bg-danger',    'Error'],
+                ok:    ['text-bg-success',   'Connected']
+            };
+            const [cls, title] = map[state] || map.idle;
+            statusDot.className = 'badge rounded-pill ' + cls;
+            statusDot.title = title;
+        }
+
+        /* ---------- Code-block copy buttons ---------- */
+        function enhanceCodeBlocks(container) {
+            container.querySelectorAll('pre > code').forEach(codeEl => {
+                const pre = codeEl.parentElement;
+                if (pre.parentElement.classList.contains('code-block')) return; // already wrapped
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'code-block';
+                pre.parentNode.insertBefore(wrapper, pre);
+                wrapper.appendChild(pre);
+
+                // language label
+                const langMatch = [...codeEl.classList].find(c => c.startsWith('language-'));
+                if (langMatch) {
+                    const label = document.createElement('span');
+                    label.className = 'code-lang';
+                    label.textContent = langMatch.replace('language-', '');
+                    wrapper.appendChild(label);
+                }
+
+                // copy button
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-sm btn-secondary code-copy-btn';
+                btn.innerHTML = '<i class="bi bi-clipboard"></i>';
+                btn.title = 'Copy code';
+                btn.onclick = async () => {
+                    try {
+                        await navigator.clipboard.writeText(codeEl.innerText);
+                        btn.innerHTML = '<i class="bi bi-check2"></i>';
+                        btn.classList.replace('btn-secondary', 'btn-success');
+                        setTimeout(() => {
+                            btn.innerHTML = '<i class="bi bi-clipboard"></i>';
+                            btn.classList.replace('btn-success', 'btn-secondary');
+                        }, 1500);
+                    } catch (e) { console.warn('Copy failed', e); }
+                };
+                wrapper.appendChild(btn);
+            });
+        }
+
+        function renderMarkdown(el, text) {
+            const dirty = marked.parse(text);
+            // Sanitize: bot output is trusted-ish, but never inject raw HTML unchecked.
+            el.innerHTML = (window.DOMPurify) ? DOMPurify.sanitize(dirty) : dirty;
+            enhanceCodeBlocks(el);
+        }
+
+        /* ---------- Model dropdown ---------- */
+        function fillModelDropdown(models) {
+            modelSelect.innerHTML = '';
+            if (!models.length) {
+                const opt = document.createElement('option');
+                opt.textContent = 'No models found';
+                opt.disabled = true;
+                modelSelect.appendChild(opt);
+                return;
+            }
+            models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                modelSelect.appendChild(opt);
+            });
+            const saved = localStorage.getItem('synapse-model');
+            if (saved && models.includes(saved)) modelSelect.value = saved;
+        }
+
+        async function loadModels() {
+            const provider = providerSelect.value;
+            const cfg = configs[provider];
+            // Try live model list from the OpenAI-compatible /v1/models endpoint
+            try {
+                const res = await fetch(cfg.base + '/v1/models', {
+                    headers: { 'Authorization': 'Bearer local-dev' }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const live = (data.data || []).map(m => m.id).filter(Boolean);
+                    if (live.length) { fillModelDropdown(live); setStatus('ok'); return; }
+                }
+            } catch (e) { /* fall back to defaults */ }
+            fillModelDropdown(cfg.models);
+        }
+
+        /* ---------- Add a message bubble ---------- */
+        function addMessageToUI(text, senderClass) {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('message', senderClass);
+            if (senderClass === 'user-message') {
+                msgDiv.classList.add('text-bg-primary');
+                msgDiv.textContent = text;
+            } else if (senderClass === 'bot-message') {
+                msgDiv.classList.add('bg-body-secondary');
+                renderMarkdown(msgDiv, text);
+            }
+            chatHistory.appendChild(msgDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            return msgDiv;
+        }
+
+        function showTyping(el) {
+            el.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+        }
+
+        /* ---------- Reply meta bar (stats + copy button) ---------- */
+        function appendCopyMeta(botMsgElement, fullReply, metaText) {
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'message-meta opacity-75';
+
+            if (metaText) {
+                const stats = document.createElement('span');
+                stats.textContent = metaText;
+                metaDiv.appendChild(stats);
+            }
+
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'btn btn-sm btn-outline-secondary py-0 px-2';
+            copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
+            copyBtn.onclick = async () => {
+                try {
+                    const clone = botMsgElement.cloneNode(true);
+                    clone.querySelector('.message-meta')?.remove();
+                    const item = new ClipboardItem({
+                        'text/html':  new Blob([clone.innerHTML], { type: 'text/html' }),
+                        'text/plain': new Blob([fullReply],       { type: 'text/plain' })
+                    });
+                    await navigator.clipboard.write([item]);
+                    copyBtn.innerHTML = '<i class="bi bi-check2"></i> Copied';
+                } catch (err) {
+                    await navigator.clipboard.writeText(fullReply);
+                    copyBtn.innerHTML = '<i class="bi bi-check2"></i> Copied';
+                }
+                setTimeout(() => copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy', 1800);
+            };
+            metaDiv.appendChild(copyBtn);
+            botMsgElement.appendChild(metaDiv);
+        }
+
+        /* ---------- Core send ---------- */
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text || userInput.disabled) return;
+
+            const userMsgElement = addMessageToUI(text, 'user-message');
+            messagesContext.push({ role: "user", content: text });
+
+            userInput.value = '';
+            userInput.style.height = 'auto';
+            await streamReply(userMsgElement);
+        }
+
+        async function streamReply(userMsgElement) {
+            userInput.disabled = true;
+            sendBtn.classList.add('d-none');
+            cancelBtn.classList.remove('d-none');
+            regenerateBtn.disabled = true;
+            setStatus('busy');
+
+            const botMsgElement = addMessageToUI("", 'bot-message');
+            showTyping(botMsgElement);
+
+            currentAbortController = new AbortController();
+            const provider = providerSelect.value;
+            const url = configs[provider].base + '/v1/chat/completions';
+            const model = modelSelect.value;
+
+            const startTime = performance.now();
+            let fullReply = "";
+            let usageData = null;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer local-dev'
+                    },
+                    signal: currentAbortController.signal,
+                    body: JSON.stringify({
+                        model: model,
+                        messages: messagesContext,
+                        temperature: parseFloat(tempRange.value),
+                        stream: true,
+                        stream_options: { include_usage: true }
+                    })
+                });
+
+                if (!response.ok) throw new Error(`Status ${response.status}`);
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                let buffer = "";
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        const cleaned = line.trim();
+                        if (!cleaned || cleaned === "data: [DONE]") continue;
+                        if (cleaned.startsWith("data: ")) {
+                            try {
+                                const parsed = JSON.parse(cleaned.slice(6));
+                                if (parsed.choices?.[0]?.delta?.content) {
+                                    fullReply += parsed.choices[0].delta.content;
+                                    renderMarkdown(botMsgElement, fullReply);
+                                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                                }
+                                if (parsed.usage) usageData = parsed.usage;
+                            } catch (e) {
+                                console.warn("Failed parsing streaming line:", cleaned, e);
+                            }
+                        }
+                    }
+                }
+
+                const timeTaken = ((performance.now() - startTime) / 1000).toFixed(2);
+                messagesContext.push({ role: "assistant", content: fullReply });
+
+                /* Telemetry */
+                let metaText = `⏱ ${timeTaken}s`;
+                if (usageData) {
+                    const total = usageData.total_tokens || 0;
+                    const completion = usageData.completion_tokens || 0;
+                    if (total > 0) metaText += ` · ${total} tok`;
+                    if (completion > 0) metaText += ` · ${(completion / timeTaken).toFixed(1)} t/s`;
+                } else {
+                    const est = Math.ceil(fullReply.split(/\s+/).length * 1.3);
+                    metaText += ` · ~${est} tok · ~${(est / timeTaken).toFixed(1)} t/s`;
+                }
+
+                appendCopyMeta(botMsgElement, fullReply, metaText);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+
+                saveHistory();
+                setStatus('ok');
+                regenerateBtn.disabled = false;
+
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    botMsgElement.remove();
+                    // Keep the user's message and context turn so they can retry/regenerate.
+                    setStatus('idle');
+                    regenerateBtn.disabled = false;
+                } else {
+                    console.error("Connection Error:", error);
+                    botMsgElement.className = 'message system-error alert alert-danger mb-0';
+                    const help = (provider === 'lm-studio')
+                        ? "Ensure LM Studio's local server is running and CORS is enabled."
+                        : 'Ensure Ollama is running and the OLLAMA_ORIGINS="*" environment flag is set.';
+                    botMsgElement.textContent = `Cannot connect. ${help} (${error.message})`;
+                    messagesContext.pop();
+                    setStatus('error');
+                }
+            } finally {
+                sendBtn.classList.remove('d-none');
+                cancelBtn.classList.add('d-none');
+                userInput.disabled = false;
+                userInput.focus();
+                currentAbortController = null;
+            }
+        }
+
+        /* ---------- Regenerate last assistant reply ---------- */
+        async function regenerate() {
+            if (currentAbortController) return;
+            // Drop the last assistant turn + its UI bubble
+            if (messagesContext[messagesContext.length - 1]?.role === 'assistant') {
+                messagesContext.pop();
+            }
+            const bubbles = chatHistory.querySelectorAll('.bot-message');
+            if (bubbles.length) bubbles[bubbles.length - 1].remove();
+            await streamReply(null);
+        }
+
+        /* ---------- Clear conversation ---------- */
+        function clearChat() {
+            messagesContext = [{ role: "system", content: SYSTEM_PROMPT }];
+            localStorage.removeItem(HISTORY_KEY);
+            chatHistory.innerHTML = '';
+            const welcome = addMessageToUI("", 'bot-message');
+            renderMarkdown(welcome, "Conversation cleared. **Ready when you are.**");
+            regenerateBtn.disabled = true;
+            setStatus('idle');
+        }
+
+        /* ---------- Export conversation ---------- */
+        function download(filename, content, mime) {
+            const blob = new Blob([content], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function stamp() {
+            return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        }
+
+        function exportJSON() {
+            download(`synapse-chat-${stamp()}.json`,
+                JSON.stringify(messagesContext, null, 2),
+                'application/json');
+        }
+
+        function exportMarkdown() {
+            const lines = [`# Synapse conversation`, `_Exported ${new Date().toLocaleString()}_`, ''];
+            messagesContext.forEach(m => {
+                if (m.role === 'system')      lines.push(`> **System prompt:** ${m.content}`, '');
+                else if (m.role === 'user')   lines.push(`## You`, '', m.content, '');
+                else if (m.role === 'assistant') lines.push(`## Synapse`, '', m.content, '');
+            });
+            download(`synapse-chat-${stamp()}.md`, lines.join('\n'), 'text/markdown');
+        }
+
+        /* ---------- System prompt editor ---------- */
+        const promptInput     = document.getElementById('prompt-input');
+        const promptSaveBtn   = document.getElementById('prompt-save-btn');
+        const promptResetBtn  = document.getElementById('prompt-reset-btn');
+        const promptModalEl   = document.getElementById('prompt-modal');
+
+        promptModalEl.addEventListener('show.bs.modal', () => {
+            promptInput.value = SYSTEM_PROMPT;
+        });
+        promptResetBtn.addEventListener('click', () => {
+            promptInput.value = DEFAULT_SYSTEM_PROMPT;
+        });
+        promptSaveBtn.addEventListener('click', () => {
+            const newPrompt = promptInput.value.trim() || DEFAULT_SYSTEM_PROMPT;
+            SYSTEM_PROMPT = newPrompt;
+            localStorage.setItem('synapse-system-prompt', newPrompt);
+            clearChat(); // applies the new prompt to a fresh conversation
+        });
+
+        /* ---------- Events ---------- */
+        cancelBtn.addEventListener('click', () => currentAbortController?.abort());
+        sendBtn.addEventListener('click', sendMessage);
+        regenerateBtn.addEventListener('click', regenerate);
+        clearBtn.addEventListener('click', clearChat);
+        refreshBtn.addEventListener('click', loadModels);
+        document.getElementById('export-md-btn').addEventListener('click', exportMarkdown);
+        document.getElementById('export-json-btn').addEventListener('click', exportJSON);
+
+        providerSelect.addEventListener('change', () => {
+            localStorage.setItem('synapse-provider', providerSelect.value);
+            loadModels();
+        });
+        modelSelect.addEventListener('change', () =>
+            localStorage.setItem('synapse-model', modelSelect.value));
+
+        tempRange.addEventListener('input', () => {
+            tempValue.textContent = parseFloat(tempRange.value).toFixed(1);
+            localStorage.setItem('synapse-temp', tempRange.value);
+        });
+
+        userInput.addEventListener('input', function () {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+        });
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        /* ---------- Init ---------- */
+        (function init() {
+            const sp = localStorage.getItem('synapse-provider');
+            if (sp) providerSelect.value = sp;
+            const st = localStorage.getItem('synapse-temp');
+            if (st) { tempRange.value = st; tempValue.textContent = parseFloat(st).toFixed(1); }
+
+            const restored = loadHistory() && renderHistory();
+            if (!restored) {
+                chatHistory.innerHTML = '';
+                const welcome = addMessageToUI("", 'bot-message');
+                renderMarkdown(welcome,
+                    "Welcome to **Synapse**. Pick a backend and model, then start chatting.\n\n*Ready to go!*");
+            }
+
+            loadModels();
+            userInput.focus();
+        })();
+    </script>
+</body>
+</html>
