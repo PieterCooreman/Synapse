@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Synapse &middot; Local AI</title>
 
+    <!-- Favicon: matching synapse/neural-node mark -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='4' y1='4' x2='28' y2='28' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%236ea8fe'/%3E%3Cstop offset='1' stop-color='%23a370f7'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M9 9 L16 16 L23 7 M16 16 L24 20 M16 16 L8 23 M16 16 L22 25' stroke='url(%23g)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='0.85'/%3E%3Ccircle cx='16' cy='16' r='4.2' fill='url(%23g)'/%3E%3Ccircle cx='9' cy='9' r='2.4' fill='%236ea8fe'/%3E%3Ccircle cx='23' cy='7' r='2.1' fill='%238c8cf0'/%3E%3Ccircle cx='24' cy='20' r='2.1' fill='%239a7af5'/%3E%3Ccircle cx='8' cy='23' r='2.1' fill='%236ea8fe'/%3E%3Ccircle cx='22' cy='25' r='2.4' fill='%23a370f7'/%3E%3C/svg%3E">
+
+
     <!-- Bootstrap 5.3 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -212,6 +216,62 @@
             background: var(--bs-border-color);
             border-radius: 8px;
         }
+
+        /* Status pill (LED dot + label) */
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.18rem 0.6rem 0.18rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            background: var(--bs-tertiary-bg);
+            border: 1px solid var(--bs-border-color);
+            color: var(--bs-secondary-color);
+            user-select: none;
+            transition: color 0.2s, background 0.2s, border-color 0.2s;
+        }
+        .status-dot-led {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 0 0 currentColor;
+            flex: 0 0 auto;
+        }
+        /* Per-state colors driven by data-state */
+        .status-pill[data-state="idle"]    { color: var(--bs-secondary-color); }
+        .status-pill[data-state="ok"]      { color: var(--bs-success); }
+        .status-pill[data-state="busy"]    { color: var(--bs-warning); }
+        .status-pill[data-state="error"]   { color: var(--bs-danger); }
+        .status-pill[data-state="offline"] { color: var(--bs-danger); }
+        /* Pulse the LED while generating */
+        .status-pill[data-state="busy"] .status-dot-led {
+            animation: status-pulse 1.2s ease-in-out infinite;
+        }
+        @keyframes status-pulse {
+            0%   { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+            70%  { box-shadow: 0 0 0 5px transparent; opacity: 0.6; }
+            100% { box-shadow: 0 0 0 0 transparent; opacity: 1; }
+        }
+        /* Soft glow when connected */
+        .status-pill[data-state="ok"] .status-dot-led,
+        .status-pill[data-state="error"] .status-dot-led,
+        .status-pill[data-state="offline"] .status-dot-led {
+            box-shadow: 0 0 6px 0 currentColor;
+        }
+
+        /* Brand logo */
+        .synapse-logo {
+            display: inline-flex;
+            align-items: center;
+            line-height: 0;
+            filter: drop-shadow(0 0 6px rgba(110, 168, 254, 0.35));
+        }
+        .synapse-logo svg { display: block; }
     </style>
 </head>
 <body class="bg-body-tertiary">
@@ -221,9 +281,31 @@
         <!-- Header -->
         <div class="card-header d-flex align-items-center justify-content-between py-3 px-4">
             <div class="d-flex align-items-center gap-2">
+                <span class="synapse-logo" aria-hidden="true">
+                    <svg viewBox="0 0 32 32" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="syn-grad" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                                <stop offset="0" stop-color="#6ea8fe"/>
+                                <stop offset="1" stop-color="#a370f7"/>
+                            </linearGradient>
+                        </defs>
+                        <!-- connecting axons -->
+                        <path d="M9 9 L16 16 L23 7 M16 16 L24 20 M16 16 L8 23 M16 16 L22 25"
+                              stroke="url(#syn-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+                        <!-- central node -->
+                        <circle cx="16" cy="16" r="4.2" fill="url(#syn-grad)"/>
+                        <!-- terminal nodes -->
+                        <circle cx="9" cy="9" r="2.4" fill="#6ea8fe"/>
+                        <circle cx="23" cy="7" r="2.1" fill="#8c8cf0"/>
+                        <circle cx="24" cy="20" r="2.1" fill="#9a7af5"/>
+                        <circle cx="8" cy="23" r="2.1" fill="#6ea8fe"/>
+                        <circle cx="22" cy="25" r="2.4" fill="#a370f7"/>
+                    </svg>
+                </span>
                 <span class="fs-5 fw-semibold">Synapse</span>
-                <span id="status-dot" class="badge rounded-pill text-bg-secondary" title="Idle">
-                    <i class="bi bi-circle-fill" style="font-size:.5rem"></i>
+                <span id="status-dot" class="status-pill" data-state="idle" title="Idle">
+                    <span class="status-dot-led"></span>
+                    <span class="status-dot-label">Idle</span>
                 </span>
             </div>
             <div class="d-flex align-items-center gap-1">
@@ -247,6 +329,10 @@
                 <button id="theme-btn" class="btn btn-sm btn-outline-secondary border-0" title="Toggle theme">
                     <i class="bi bi-moon-stars-fill"></i>
                 </button>
+                <a href="https://github.com/PieterCooreman/Synapse" target="_blank" rel="noopener noreferrer"
+                   class="btn btn-sm btn-outline-secondary border-0" title="View source on GitHub">
+                    <i class="bi bi-github"></i>
+                </a>
             </div>
         </div>
 
@@ -282,6 +368,8 @@
                 <div class="col-12 col-sm-2">
                     <label for="temp-range" class="form-label small text-uppercase fw-bold opacity-75 mb-1">
                         Temp <span id="temp-value" class="text-primary">0.7</span>
+                        <i id="temp-warn" class="bi bi-exclamation-triangle-fill text-warning ms-1 d-none"
+                           title="High temperature can produce incoherent output"></i>
                     </label>
                     <input type="range" id="temp-range" class="form-range" min="0" max="2" step="0.1" value="0.7">
                 </div>
@@ -414,6 +502,7 @@
         const refreshBtn    = document.getElementById('refresh-models-btn');
         const tempRange     = document.getElementById('temp-range');
         const tempValue     = document.getElementById('temp-value');
+        const tempWarn      = document.getElementById('temp-warn');
         const statusDot     = document.getElementById('status-dot');
         const hljsTheme     = document.getElementById('hljs-theme');
 
@@ -438,6 +527,7 @@
 const DEFAULT_PERSONAS = [
     { name: "Coding Assistant", prompt: DEFAULT_SYSTEM_PROMPT },
     { name: "Web Designer",     prompt: "You are a senior web/UI designer. Give opinionated, practical design advice on layout, spacing, color, typography and accessibility. When you produce HTML/CSS, wrap it in fenced code blocks and prefer clean, modern, responsive markup." },
+    { name: "Single-File HTML Builder", prompt: "You build complete, self-contained single-file websites. ALWAYS output exactly ONE complete index.html document and nothing else. Put ALL CSS inside a single <style> tag in the <head>, and ALL JavaScript inside a single <script> tag before </body> — never reference external .css or .js files. Output ONLY one fenced ```html code block: no explanations, no commentary, no design critique, and no multiple code blocks. The file must be ready to save and open directly in a browser. Do not use placeholder asset paths that require external files; if you need images, use inline SVG, CSS gradients, or data URIs. Write clean, modern, responsive markup." },
     { name: "Blog Writer",      prompt: "You are a skilled blog writer. Write engaging, well-structured articles in Markdown with clear headings, short paragraphs and a friendly, confident tone. Ask for the target audience if it is unclear." },
     { name: "Musician",         prompt: "You are an experienced musician and songwriter. Help with lyrics, chord progressions, song structure, music theory and production tips. Use Markdown; put chords or tablature in code blocks." },
     
@@ -547,17 +637,19 @@ const DEFAULT_PERSONAS = [
         applyTheme(localStorage.getItem('synapse-theme') || 'dark');
 
         /* ---------- Status indicator ---------- */
-        function setStatus(state) {
-            // state: idle | busy | error | ok
-            const map = {
-                idle:  ['text-bg-secondary', 'Idle'],
-                busy:  ['text-bg-warning',   'Generating…'],
-                error: ['text-bg-danger',    'Error'],
-                ok:    ['text-bg-success',   'Connected']
+        function setStatus(state, titleOverride) {
+            // state: idle | busy | error | ok | offline
+            const labels = {
+                idle:    'Idle',
+                busy:    'Generating…',
+                error:   'Error',
+                ok:      'Connected',
+                offline: 'Offline'
             };
-            const [cls, title] = map[state] || map.idle;
-            statusDot.className = 'badge rounded-pill ' + cls;
-            statusDot.title = title;
+            const key = labels[state] ? state : 'idle';
+            statusDot.dataset.state = key;
+            statusDot.title = titleOverride || labels[key];
+            statusDot.querySelector('.status-dot-label').textContent = labels[key];
         }
 
         /* ---------- Code-block copy buttons ---------- */
@@ -688,11 +780,11 @@ const DEFAULT_PERSONAS = [
         }
 
         /* ---------- Model dropdown ---------- */
-        function fillModelDropdown(models) {
+        function fillModelDropdown(models, emptyText) {
             modelSelect.innerHTML = '';
             if (!models.length) {
                 const opt = document.createElement('option');
-                opt.textContent = 'No models found';
+                opt.textContent = emptyText || 'No models found';
                 opt.disabled = true;
                 modelSelect.appendChild(opt);
                 return;
@@ -709,6 +801,7 @@ const DEFAULT_PERSONAS = [
         async function loadModels() {
             const provider = providerSelect.value;
             const cfg = configs[provider];
+            const name = provider === 'lm-studio' ? 'LM Studio' : 'Ollama';
             // Try live model list from the OpenAI-compatible /v1/models endpoint
             try {
                 const res = await fetch(cfg.base + '/v1/models', {
@@ -718,9 +811,21 @@ const DEFAULT_PERSONAS = [
                     const data = await res.json();
                     const live = (data.data || []).map(m => m.id).filter(Boolean);
                     if (live.length) { fillModelDropdown(live); setStatus('ok'); return; }
+                    // Server is up but reports no models.
+                    fillModelDropdown([], 'No models loaded in ' + name);
+                    setStatus('ok');
+                    return;
                 }
-            } catch (e) { /* fall back to defaults */ }
-            fillModelDropdown(cfg.models);
+                // Reachable but returned an HTTP error.
+                fillModelDropdown(cfg.models, 'Backend error from ' + name);
+                setStatus('error', name + ' responded with an error.');
+            } catch (e) {
+                // Connection refused / network failure => backend not running.
+                fillModelDropdown(cfg.models, name + ' offline — start it & refresh');
+                setStatus('offline',
+                    `${name} is not reachable at ${cfg.base}. Start the local server `
+                    + `(enable CORS) and click the refresh button.`);
+            }
         }
 
         /* ---------- Add a message bubble ---------- */
@@ -1151,9 +1256,18 @@ const DEFAULT_PERSONAS = [
         modelSelect.addEventListener('change', () =>
             localStorage.setItem('synapse-model', modelSelect.value));
 
+        // Highlight risky temperatures (>1.0 tends to produce incoherent output).
+        function reflectTempWarning() {
+            const high = parseFloat(tempRange.value) > 1.0;
+            tempValue.classList.toggle('text-warning', high);
+            tempValue.classList.toggle('text-primary', !high);
+            tempWarn.classList.toggle('d-none', !high);
+        }
+
         tempRange.addEventListener('input', () => {
             tempValue.textContent = parseFloat(tempRange.value).toFixed(1);
             localStorage.setItem('synapse-temp', tempRange.value);
+            reflectTempWarning();
         });
 
         userInput.addEventListener('input', function () {
@@ -1229,6 +1343,7 @@ const DEFAULT_PERSONAS = [
             if (sp) providerSelect.value = sp;
             const st = localStorage.getItem('synapse-temp');
             if (st) { tempRange.value = st; tempValue.textContent = parseFloat(st).toFixed(1); }
+            reflectTempWarning();
 
             const restored = loadHistory() && renderHistory();
             if (!restored) {
