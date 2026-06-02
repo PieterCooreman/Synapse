@@ -368,8 +368,23 @@
                 <div class="col-12 col-sm-2">
                     <label for="temp-range" class="form-label small text-uppercase fw-bold opacity-75 mb-1">
                         Temp <span id="temp-value" class="text-primary">0.7</span>
+                        <button type="button" id="temp-help" class="btn btn-link p-0 border-0 align-baseline text-decoration-none ms-1"
+                                style="cursor:help; line-height:1;"
+                                data-bs-toggle="popover" data-bs-trigger="focus" data-bs-html="true"
+                                data-bs-placement="bottom" title="About temperature"
+                                data-bs-content="
+                                    <p class='mb-2'>Controls the <strong>randomness</strong> of the model's word choices.</p>
+                                    <ul class='mb-1 ps-3 small'>
+                                        <li><strong>0.0–0.3</strong> — precise &amp; focused (code, facts)</li>
+                                        <li><strong>0.4–0.7</strong> — balanced (general use)</li>
+                                        <li><strong>0.8–1.0</strong> — creative &amp; varied (writing, brainstorming)</li>
+                                        <li class='text-danger'><strong>Above 1.0</strong> — risky; output can become incoherent</li>
+                                    </ul>
+                                    <p class='mb-0 small text-secondary'>Picking a persona sets a recommended value.</p>">
+                            <i class="bi bi-question-circle text-secondary"></i>
+                        </button>
                         <i id="temp-warn" class="bi bi-exclamation-triangle-fill text-warning ms-1 d-none"
-                           title="High temperature can produce incoherent output"></i>
+                           title="High temperature (above 1.0) can produce incoherent or garbled output."></i>
                     </label>
                     <input type="range" id="temp-range" class="form-range" min="0" max="2" step="0.1" value="0.7">
                 </div>
@@ -525,20 +540,22 @@
 
         // Built-in starter personas for local AI-Lab.
 const DEFAULT_PERSONAS = [
-    { name: "Coding Assistant", prompt: DEFAULT_SYSTEM_PROMPT },
-    { name: "Web Designer",     prompt: "You are a senior web/UI designer. Give opinionated, practical design advice on layout, spacing, color, typography and accessibility. When you produce HTML/CSS, wrap it in fenced code blocks and prefer clean, modern, responsive markup." },
-    { name: "Single-File HTML Builder", prompt: "You build complete, self-contained single-file websites. ALWAYS output exactly ONE complete index.html document and nothing else. Put ALL CSS inside a single <style> tag in the <head>, and ALL JavaScript inside a single <script> tag before </body> — never reference external .css or .js files. Output ONLY one fenced ```html code block: no explanations, no commentary, no design critique, and no multiple code blocks. The file must be ready to save and open directly in a browser. Do not use placeholder asset paths that require external files; if you need images, use inline SVG, CSS gradients, or data URIs. Write clean, modern, responsive markup." },
-    { name: "Blog Writer",      prompt: "You are a skilled blog writer. Write engaging, well-structured articles in Markdown with clear headings, short paragraphs and a friendly, confident tone. Ask for the target audience if it is unclear." },
-    { name: "Musician",         prompt: "You are an experienced musician and songwriter. Help with lyrics, chord progressions, song structure, music theory and production tips. Use Markdown; put chords or tablature in code blocks." },
+    // `temp` is the recommended default temperature for each persona:
+    // low (≈0.2–0.4) for precise/code/factual work, higher (≈0.8–1.0) for creative work.
+    { name: "Coding Assistant", temp: 0.3, prompt: DEFAULT_SYSTEM_PROMPT },
+    { name: "Web Designer",     temp: 0.5, prompt: "You are a senior web/UI designer. Give opinionated, practical design advice on layout, spacing, color, typography and accessibility. When you produce HTML/CSS, wrap it in fenced code blocks and prefer clean, modern, responsive markup." },
+    { name: "Single-File HTML Builder", temp: 0.3, prompt: "You build complete, self-contained single-file websites. ALWAYS output exactly ONE complete index.html document and nothing else. Put ALL CSS inside a single <style> tag in the <head>, and ALL JavaScript inside a single <script> tag before </body> — never reference external .css or .js files. Output ONLY one fenced ```html code block: no explanations, no commentary, no design critique, and no multiple code blocks. The file must be ready to save and open directly in a browser. Do not use placeholder asset paths that require external files; if you need images, use inline SVG, CSS gradients, or data URIs. Write clean, modern, responsive markup." },
+    { name: "Blog Writer",      temp: 0.8, prompt: "You are a skilled blog writer. Write engaging, well-structured articles in Markdown with clear headings, short paragraphs and a friendly, confident tone. Ask for the target audience if it is unclear." },
+    { name: "Musician",         temp: 1.0, prompt: "You are an experienced musician and songwriter. Help with lyrics, chord progressions, song structure, music theory and production tips. Use Markdown; put chords or tablature in code blocks." },
     
     // --- New Personas ---
     
-    { name: "CLI & Linux Expert", prompt: "You are a strict Linux and command-line expert. Provide safe, efficient shell commands and bash scripts. Briefly explain the flags and syntax used. Always wrap commands in fenced code blocks." },
-    { name: "Rubber Duck (Debug)",prompt: "You are a 'rubber duck' debugging assistant. Do not write the full solution immediately. Ask probing questions, point out logical flaws in my code, and guide me to find the answer myself. Be analytical and concise." },
-    { name: "Text Summarizer",    prompt: "You are a precise summarization tool. Distill the provided text into its core arguments and key facts. Use bullet points and bold text for readability. Strictly avoid adding external information or your own opinions." },
-    { name: "Data Analyst",       prompt: "You are a data analyst specializing in Python (pandas, numpy). Write clean, efficient code for data manipulation and visualization. Briefly explain your data transformations. Enclose code in fenced blocks." },
-    { name: "Proofreader",        prompt: "You are a strict copy editor. Correct grammar, punctuation, and awkward phrasing in the provided text. Output the corrected text first, followed by a concise bulleted list of the specific changes you made." },
-    { name: "Brainstormer",       prompt: "You are a creative brainstorming partner. Generate diverse, lateral-thinking ideas based on the user's prompt. Format your output as a rapid-fire list of concepts with one-sentence descriptions. Prioritize quantity and variety." }
+    { name: "CLI & Linux Expert", temp: 0.2, prompt: "You are a strict Linux and command-line expert. Provide safe, efficient shell commands and bash scripts. Briefly explain the flags and syntax used. Always wrap commands in fenced code blocks." },
+    { name: "Rubber Duck (Debug)",temp: 0.4, prompt: "You are a 'rubber duck' debugging assistant. Do not write the full solution immediately. Ask probing questions, point out logical flaws in my code, and guide me to find the answer myself. Be analytical and concise." },
+    { name: "Text Summarizer",    temp: 0.3, prompt: "You are a precise summarization tool. Distill the provided text into its core arguments and key facts. Use bullet points and bold text for readability. Strictly avoid adding external information or your own opinions." },
+    { name: "Data Analyst",       temp: 0.3, prompt: "You are a data analyst specializing in Python (pandas, numpy). Write clean, efficient code for data manipulation and visualization. Briefly explain your data transformations. Enclose code in fenced blocks." },
+    { name: "Proofreader",        temp: 0.2, prompt: "You are a strict copy editor. Correct grammar, punctuation, and awkward phrasing in the provided text. Output the corrected text first, followed by a concise bulleted list of the specific changes you made." },
+    { name: "Brainstormer",       temp: 1.0, prompt: "You are a creative brainstorming partner. Generate diverse, lateral-thinking ideas based on the user's prompt. Format your output as a rapid-fire list of concepts with one-sentence descriptions. Prioritize quantity and variety." }
 ];
 
         function loadPersonas() {
@@ -772,11 +789,14 @@ const DEFAULT_PERSONAS = [
             previewModal.show();
         }
 
-        function renderMarkdown(el, text) {
+        // `enhance` controls whether per-code-block action buttons (Copy/Preview/
+        // Download) are added. We skip them while streaming so the Copy button
+        // only appears once the reply is 100% generated.
+        function renderMarkdown(el, text, enhance = true) {
             const dirty = marked.parse(text);
             // Sanitize: bot output is trusted-ish, but never inject raw HTML unchecked.
             el.innerHTML = (window.DOMPurify) ? DOMPurify.sanitize(dirty) : dirty;
-            enhanceCodeBlocks(el);
+            if (enhance) enhanceCodeBlocks(el);
         }
 
         /* ---------- Model dropdown ---------- */
@@ -953,7 +973,9 @@ const DEFAULT_PERSONAS = [
                                 const parsed = JSON.parse(cleaned.slice(6));
                                 if (parsed.choices?.[0]?.delta?.content) {
                                     fullReply += parsed.choices[0].delta.content;
-                                    renderMarkdown(botMsgElement, fullReply);
+                                    // Render markdown live, but withhold code-block
+                                    // action buttons until generation completes.
+                                    renderMarkdown(botMsgElement, fullReply, false);
                                     chatHistory.scrollTop = chatHistory.scrollHeight;
                                 }
                                 if (parsed.usage) usageData = parsed.usage;
@@ -966,6 +988,10 @@ const DEFAULT_PERSONAS = [
 
                 const timeTaken = ((performance.now() - startTime) / 1000).toFixed(2);
                 messagesContext.push({ role: "assistant", content: fullReply });
+
+                // Generation is 100% complete: now add the code-block action
+                // buttons (Copy / Preview / Download).
+                renderMarkdown(botMsgElement, fullReply, true);
 
                 /* Telemetry */
                 let metaText = `⏱ ${timeTaken}s`;
@@ -1094,7 +1120,8 @@ const DEFAULT_PERSONAS = [
         }
         refreshPersonaUI();
 
-        // Apply a persona by name: set the active prompt and restart the chat.
+        // Apply a persona by name: set the active prompt, its recommended
+        // temperature, and restart the chat.
         function applyPersona(name) {
             const p = personas.find(x => x.name === name);
             if (!p) return;
@@ -1102,6 +1129,7 @@ const DEFAULT_PERSONAS = [
             SYSTEM_PROMPT = p.prompt;
             localStorage.setItem(ACTIVE_PERSONA_KEY, activePersonaName);
             fillPersonaSelect(personaSelect, activePersonaName);
+            if (typeof p.temp === 'number') setTemperature(p.temp);
             clearChat(); // starts a fresh conversation with the new system prompt
         }
 
@@ -1264,6 +1292,17 @@ const DEFAULT_PERSONAS = [
             tempWarn.classList.toggle('d-none', !high);
         }
 
+        // Programmatically set the temperature slider (clamped to its range),
+        // updating the label, warning state, and persisted value.
+        function setTemperature(value) {
+            const min = parseFloat(tempRange.min), max = parseFloat(tempRange.max);
+            const t = Math.min(max, Math.max(min, parseFloat(value)));
+            tempRange.value = t;
+            tempValue.textContent = t.toFixed(1);
+            localStorage.setItem('synapse-temp', t);
+            reflectTempWarning();
+        }
+
         tempRange.addEventListener('input', () => {
             tempValue.textContent = parseFloat(tempRange.value).toFixed(1);
             localStorage.setItem('synapse-temp', tempRange.value);
@@ -1344,6 +1383,10 @@ const DEFAULT_PERSONAS = [
             const st = localStorage.getItem('synapse-temp');
             if (st) { tempRange.value = st; tempValue.textContent = parseFloat(st).toFixed(1); }
             reflectTempWarning();
+
+            // Bootstrap popovers are opt-in: initialize the temperature help popover.
+            document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el =>
+                new bootstrap.Popover(el, { container: 'body' }));
 
             const restored = loadHistory() && renderHistory();
             if (!restored) {
