@@ -4,19 +4,19 @@ A lightweight, single-file chat UI for talking to a **locally running LLM** — 
 
 Everything (HTML, CSS, and JavaScript) lives in one `index.html` file.
 
-Try it here: https://pietercooreman.github.io/Synapse/
-
 ## Features
 
 - **Streaming responses** — tokens render live as the model generates them.
 - **Conversation memory** — the full chat context is sent on each request.
 - **Provider switching** — LM Studio (port `1234`) or Ollama (port `11434`), both via the OpenAI-compatible `/v1` API.
 - **Live model list** — models are fetched from the provider's `/v1/models` endpoint, with a refresh button.
-- **Markdown + syntax highlighting** — replies render as Markdown with highlighted code blocks.
+- **Personas / prompt manager** — save, edit and switch between named system prompts (Coding Assistant, Web Designer, Blog Writer, Musician, or your own) from a dropdown. Switching a persona starts a fresh conversation with its prompt.
+- **Voice input** — dictate your message with the microphone button, powered by the browser's native Web Speech API (no libraries or API keys).
+- **Markdown + syntax highlighting** — replies render as Markdown with highlighted code blocks and properly sized headings.
 - **Copy buttons** — copy a whole reply, or copy any individual code block.
-- **Dark / light theme** — toggle in the header; the choice (and the code highlight theme) is remembered.
+- **HTML live preview** — when a reply contains a full HTML document, preview it in a sandboxed, full-screen modal. Edit the source and re-render on the fly, then copy, download, or open it in a new tab. Each HTML block also gets dedicated **Preview / Download / Copy HTML** buttons in the chat.
+- **Dark / light theme** — toggle in the header; the choice (and the code highlight theme) is remembered. Previews always render in a neutral light scheme, independent of the app theme.
 - **Adjustable temperature** — slider from `0` to `2`.
-- **Editable system prompt** — change the assistant's behavior from the UI.
 - **Persistent history** — your conversation is saved to `localStorage` and restored on reload.
 - **Export** — download the conversation as Markdown (`.md`) or JSON (`.json`).
 - **Regenerate & stop** — re-run the last reply, or abort an in-progress generation.
@@ -29,7 +29,9 @@ Try it here: https://pietercooreman.github.io/Synapse/
    - **LM Studio:** start the local server and enable **CORS**.
    - **Ollama:** run with cross-origin requests allowed, e.g. set `OLLAMA_ORIGINS="*"`.
 2. Open `index.html` in a modern browser (double-click it, or serve it locally).
-3. Pick your **Backend** and **Model**, then start chatting.
+3. Pick your **Persona**, **Backend** and **Model**, then start chatting.
+
+> **Voice input** requires a Chromium-based browser (Chrome/Edge) and microphone permission. The button hides automatically where the Web Speech API isn't available (e.g. Firefox).
 
 > No dependencies to install — all libraries are loaded from a CDN at runtime, so an internet connection is needed the first time for the stylesheets and scripts (the LLM itself stays local).
 
@@ -56,15 +58,17 @@ Requests are sent to the OpenAI-compatible `POST /v1/chat/completions` endpoint 
 - [marked](https://marked.js.org/) — Markdown rendering.
 - [highlight.js](https://highlightjs.org/) — code syntax highlighting.
 - [DOMPurify](https://github.com/cure53/DOMPurify) — HTML sanitization.
-- Vanilla JavaScript — streaming via `fetch` + `ReadableStream`, `AbortController` for cancellation, the Clipboard API for copy, and `localStorage` for persistence.
+- Vanilla JavaScript — streaming via `fetch` + `ReadableStream`, `AbortController` for cancellation, the Clipboard API for copy, the [Web Speech API](https://developer.mozilla.org/docs/Web/API/Web_Speech_API) for voice input, a sandboxed `<iframe>` for HTML preview, and `localStorage` for persistence.
 
 ## Browser support
 
-Works in any modern, evergreen browser (Chrome, Edge, Firefox, Safari). Requires support for `fetch` streaming, the Clipboard API, and `localStorage`.
+Works in any modern, evergreen browser (Chrome, Edge, Firefox, Safari). Requires support for `fetch` streaming, the Clipboard API, and `localStorage`. **Voice input** additionally needs the Web Speech API (`webkitSpeechRecognition`), available in Chromium-based browsers; elsewhere the microphone button is hidden.
 
 ## Privacy
 
-The chatbot talks only to your **local** LLM server. Conversations are stored in your browser's `localStorage` and never leave your machine. The only external requests are to a CDN for the front-end libraries.
+The chatbot talks only to your **local** LLM server. Conversations and personas are stored in your browser's `localStorage` and never leave your machine. The only external requests are to a CDN for the front-end libraries.
+
+> **Note on voice input:** the Web Speech API in Chromium browsers streams audio to Google's servers for transcription — it is not on-device. If that matters for your use case, avoid the microphone button and type instead.
 
 ## License
 

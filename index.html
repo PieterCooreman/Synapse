@@ -72,6 +72,20 @@
         /* Markdown internals */
         .message p { margin: 0 0 0.6rem 0; }
         .message p:last-child { margin: 0; }
+        /* Scale headings down so they fit naturally in chat bubbles */
+        .message h1, .message h2, .message h3,
+        .message h4, .message h5, .message h6 {
+            font-weight: 600;
+            line-height: 1.3;
+            margin: 0.8rem 0 0.4rem 0;
+        }
+        .message h1:first-child, .message h2:first-child, .message h3:first-child,
+        .message h4:first-child, .message h5:first-child, .message h6:first-child { margin-top: 0; }
+        .message h1 { font-size: 1.6rem; }
+        .message h2 { font-size: 1.4rem; }
+        .message h3 { font-size: 1.2rem; }
+        .message h4 { font-size: 1.05rem; }
+        .message h5, .message h6 { font-size: 0.95rem; opacity: 0.85; }
         .message ul, .message ol { margin: 0 0 0.6rem 0; padding-left: 1.25rem; }
         .message li { margin-bottom: 0.25rem; }
         .message :not(pre) > code {
@@ -80,6 +94,7 @@
             border-radius: 0.3rem;
             background: var(--bs-tertiary-bg);
         }
+		.message table { width: 100%; overflow-x: auto; display: block; }
 
         /* Code block wrapper with per-block copy button */
         .code-block { position: relative; margin: 0.75rem 0; }
@@ -105,15 +120,47 @@
             user-select: none;
             pointer-events: none;
         }
-        .code-copy-btn {
+        .code-actions {
             position: absolute;
             top: 0.4rem;
             right: 0.4rem;
+            display: flex;
+            gap: 0.3rem;
             opacity: 0;
             transition: opacity 0.15s;
             z-index: 2;
         }
-        .code-block:hover .code-copy-btn { opacity: 1; }
+        .code-block:hover .code-actions { opacity: 1; }
+
+        /* Always-visible action bar under the code block */
+        .code-actions-bottom {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.4rem;
+            margin-top: 0.4rem;
+        }
+
+        /* Live preview iframe — fills the fullscreen modal body */
+        #preview-modal .modal-body { display: flex; gap: 0.5rem; overflow: hidden; }
+        #preview-frame {
+            width: 100%;
+            height: 100%;
+            flex: 1;
+            border: 0;
+            border-radius: 0.5rem;
+            background: #fff;
+        }
+        /* HTML source editor — shown side-by-side with the preview when editing */
+        #preview-editor {
+            flex: 1;
+            height: 100%;
+            resize: none;
+            white-space: pre;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        /* When the editor is visible, split the body 50/50 */
+        #preview-body:not(.editing) #preview-editor { display: none !important; }
 
         .message-meta {
             font-size: 0.72rem;
@@ -146,6 +193,19 @@
         .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
         .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
         @keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
+
+        /* Mic button while actively listening */
+        #mic-btn.listening {
+            color: #fff;
+            background-color: var(--bs-danger);
+            border-color: var(--bs-danger);
+            animation: micpulse 1.2s infinite;
+        }
+        @keyframes micpulse {
+            0%   { box-shadow: 0 0 0 0 rgba(220,53,69,0.6); }
+            70%  { box-shadow: 0 0 0 8px rgba(220,53,69,0); }
+            100% { box-shadow: 0 0 0 0 rgba(220,53,69,0); }
+        }
 
         #chat-history::-webkit-scrollbar { width: 10px; }
         #chat-history::-webkit-scrollbar-thumb {
@@ -193,14 +253,24 @@
         <!-- Settings -->
         <div class="card-body border-bottom py-2 px-4">
             <div class="row g-2 align-items-end">
-                <div class="col-12 col-sm-4">
+                <div class="col-12 col-sm-3">
+                    <label for="persona-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Persona</label>
+                    <div class="input-group input-group-sm">
+                        <select id="persona-select" class="form-select form-select-sm"></select>
+                        <button id="manage-personas-btn" class="btn btn-outline-secondary" title="Manage personas"
+                                data-bs-toggle="modal" data-bs-target="#prompt-modal">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-12 col-sm-3">
                     <label for="provider-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Backend</label>
                     <select id="provider-select" class="form-select form-select-sm">
                         <option value="lm-studio">LM Studio (1234)</option>
                         <option value="ollama">Ollama (11434)</option>
                     </select>
                 </div>
-                <div class="col-12 col-sm-5">
+                <div class="col-12 col-sm-4">
                     <label for="model-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Model</label>
                     <div class="input-group input-group-sm">
                         <select id="model-select" class="form-select form-select-sm"></select>
@@ -209,7 +279,7 @@
                         </button>
                     </div>
                 </div>
-                <div class="col-12 col-sm-3">
+                <div class="col-12 col-sm-2">
                     <label for="temp-range" class="form-label small text-uppercase fw-bold opacity-75 mb-1">
                         Temp <span id="temp-value" class="text-primary">0.7</span>
                     </label>
@@ -227,6 +297,9 @@
                 <textarea id="user-input" class="form-control"
                     placeholder="Type your message… (Shift + Enter for newline)"
                     autocomplete="off" rows="1"></textarea>
+                <button id="mic-btn" class="btn btn-outline-secondary" title="Voice input">
+                    <i class="bi bi-mic"></i>
+                </button>
                 <button id="regenerate-btn" class="btn btn-outline-secondary" title="Regenerate last reply" disabled>
                     <i class="bi bi-arrow-repeat"></i>
                 </button>
@@ -240,28 +313,87 @@
         </div>
     </div>
 
-    <!-- System prompt modal -->
+    <!-- Persona manager modal -->
     <div class="modal fade" id="prompt-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-sliders me-2"></i>System Prompt</h5>
+                    <h5 class="modal-title"><i class="bi bi-people me-2"></i>Persona Manager</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="small opacity-75">
-                        This instruction guides the assistant's behavior. Changing it resets the conversation.
+                    <p class="small opacity-75 mb-3">
+                        Personas are reusable system prompts. Pick one to edit, create a new one,
+                        or delete. Applying a persona starts a fresh conversation with its prompt.
                     </p>
-                    <textarea id="prompt-input" class="form-control font-monospace" rows="8"></textarea>
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col">
+                            <label for="persona-edit-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Edit persona</label>
+                            <select id="persona-edit-select" class="form-select form-select-sm"></select>
+                        </div>
+                        <div class="col-auto">
+                            <button id="persona-new-btn" class="btn btn-sm btn-outline-secondary" title="New persona">
+                                <i class="bi bi-plus-lg me-1"></i>New
+                            </button>
+                        </div>
+                        <div class="col-auto">
+                            <button id="persona-delete-btn" class="btn btn-sm btn-outline-danger" title="Delete persona">
+                                <i class="bi bi-trash3 me-1"></i>Delete
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label for="persona-name" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Name</label>
+                        <input id="persona-name" type="text" class="form-control form-control-sm" placeholder="e.g. Web Designer">
+                    </div>
+                    <div>
+                        <label for="prompt-input" class="form-label small text-uppercase fw-bold opacity-75 mb-1">System prompt</label>
+                        <textarea id="prompt-input" class="form-control font-monospace" rows="7"></textarea>
+                    </div>
                 </div>
                 <div class="modal-footer">
-                    <button id="prompt-reset-btn" class="btn btn-outline-secondary me-auto">
-                        <i class="bi bi-arrow-counterclockwise me-1"></i>Reset to default
+                    <button id="prompt-save-btn" class="btn btn-secondary me-auto">
+                        <i class="bi bi-save me-1"></i>Save persona
                     </button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button id="prompt-save-btn" class="btn btn-primary" data-bs-dismiss="modal">
-                        <i class="bi bi-check2 me-1"></i>Save &amp; restart chat
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                    <button id="prompt-apply-btn" class="btn btn-primary" data-bs-dismiss="modal">
+                        <i class="bi bi-check2 me-1"></i>Apply &amp; restart chat
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HTML live-preview modal -->
+    <div class="modal fade" id="preview-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-fullscreen">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title me-auto"><i class="bi bi-eye me-2"></i>Live Preview</h5>
+                    <div class="d-flex align-items-center gap-2">
+                        <button id="preview-edit-btn" class="btn btn-sm btn-outline-secondary" title="Edit HTML source">
+                            <i class="bi bi-code-slash me-1"></i>Edit
+                        </button>
+                        <button id="preview-run-btn" class="btn btn-sm btn-primary d-none" title="Apply edits to the preview">
+                            <i class="bi bi-play-fill me-1"></i>Run
+                        </button>
+                        <button id="preview-copy-btn" class="btn btn-sm btn-outline-secondary" title="Copy HTML">
+                            <i class="bi bi-clipboard me-1"></i>Copy HTML
+                        </button>
+                        <button id="preview-download-btn" class="btn btn-sm btn-outline-secondary" title="Download as .html">
+                            <i class="bi bi-download me-1"></i>Download
+                        </button>
+                        <button id="preview-newtab-btn" class="btn btn-sm btn-outline-secondary" title="Open in a new tab">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>New tab
+                        </button>
+                        <button type="button" class="btn-close ms-2" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                </div>
+                <div class="modal-body p-2" id="preview-body">
+                    <textarea id="preview-editor" class="form-control font-monospace d-none" spellcheck="false"
+                              wrap="off" aria-label="HTML source"></textarea>
+                    <iframe id="preview-frame" sandbox="allow-scripts allow-forms allow-modals allow-popups"
+                            referrerpolicy="no-referrer"></iframe>
                 </div>
             </div>
         </div>
@@ -297,7 +429,42 @@
         });
 
         const DEFAULT_SYSTEM_PROMPT = "You are Synapse, an expert coding assistant. You provide clear answers formatted in Markdown. IMPORTANT: You must ALWAYS wrap HTML, CSS, JavaScript, and any other code snippets inside triple backtick (```) Markdown code blocks, and label the language after the opening backticks.";
-        let SYSTEM_PROMPT = localStorage.getItem('synapse-system-prompt') || DEFAULT_SYSTEM_PROMPT;
+
+        /* ---------- Personas (named system prompts) ---------- */
+        const PERSONAS_KEY = 'synapse-personas';
+        const ACTIVE_PERSONA_KEY = 'synapse-active-persona';
+
+        // Built-in starter personas (used only when nothing is stored yet).
+        const DEFAULT_PERSONAS = [
+            { name: "Coding Assistant", prompt: DEFAULT_SYSTEM_PROMPT },
+            { name: "Web Designer",     prompt: "You are a senior web/UI designer. Give opinionated, practical design advice on layout, spacing, color, typography and accessibility. When you produce HTML/CSS, wrap it in fenced code blocks and prefer clean, modern, responsive markup." },
+            { name: "Blog Writer",      prompt: "You are a skilled blog writer. Write engaging, well-structured articles in Markdown with clear headings, short paragraphs and a friendly, confident tone. Ask for the target audience if it is unclear." },
+            { name: "Musician",         prompt: "You are an experienced musician and songwriter. Help with lyrics, chord progressions, song structure, music theory and production tips. Use Markdown; put chords or tablature in code blocks." }
+        ];
+
+        function loadPersonas() {
+            try {
+                const raw = localStorage.getItem(PERSONAS_KEY);
+                if (raw) {
+                    const arr = JSON.parse(raw);
+                    if (Array.isArray(arr) && arr.length) return arr;
+                }
+            } catch (e) { console.warn('Could not load personas', e); }
+            return DEFAULT_PERSONAS.slice();
+        }
+        function savePersonas() {
+            localStorage.setItem(PERSONAS_KEY, JSON.stringify(personas));
+        }
+
+        let personas = loadPersonas();
+        let activePersonaName = localStorage.getItem(ACTIVE_PERSONA_KEY) || personas[0].name;
+        // Normalize in case the stored active persona was deleted/renamed.
+        if (!personas.some(p => p.name === activePersonaName)) activePersonaName = personas[0].name;
+        function getActivePersona() {
+            return personas.find(p => p.name === activePersonaName) || personas[0];
+        }
+        // SYSTEM_PROMPT stays the single source of truth used by the rest of the app.
+        let SYSTEM_PROMPT = getActivePersona().prompt;
 
         const configs = {
             'lm-studio': {
@@ -404,24 +571,104 @@
                     wrapper.appendChild(label);
                 }
 
-                // copy button
-                const btn = document.createElement('button');
-                btn.className = 'btn btn-sm btn-secondary code-copy-btn';
-                btn.innerHTML = '<i class="bi bi-clipboard"></i>';
-                btn.title = 'Copy code';
-                btn.onclick = async () => {
-                    try {
-                        await navigator.clipboard.writeText(codeEl.innerText);
-                        btn.innerHTML = '<i class="bi bi-check2"></i>';
-                        btn.classList.replace('btn-secondary', 'btn-success');
-                        setTimeout(() => {
-                            btn.innerHTML = '<i class="bi bi-clipboard"></i>';
-                            btn.classList.replace('btn-success', 'btn-secondary');
-                        }, 1500);
-                    } catch (e) { console.warn('Copy failed', e); }
-                };
-                wrapper.appendChild(btn);
+                const isHtml = isFullHtmlDoc(codeEl.innerText);
+
+                // Builds a fresh set of action buttons (each placement needs its
+                // own elements so their per-button state doesn't collide).
+                // `withLabel` controls whether buttons show a text label.
+                function buildActions(withLabel) {
+                    const frag = document.createDocumentFragment();
+                    const lbl = (text) => withLabel ? ' ' + text : '';
+
+                    if (isHtml) {
+                        // Preview
+                        const previewBtn = document.createElement('button');
+                        previewBtn.className = 'btn btn-sm btn-primary';
+                        previewBtn.innerHTML = '<i class="bi bi-eye"></i>' + lbl('Preview');
+                        previewBtn.title = 'Preview rendered page';
+                        previewBtn.onclick = () => openPreview(codeEl.innerText);
+                        frag.appendChild(previewBtn);
+
+                        // Download
+                        const downloadBtn = document.createElement('button');
+                        downloadBtn.className = 'btn btn-sm btn-secondary';
+                        downloadBtn.innerHTML = '<i class="bi bi-download"></i>' + lbl('Download');
+                        downloadBtn.title = 'Download as .html';
+                        downloadBtn.onclick = () =>
+                            download(`synapse-${stamp()}.html`, codeEl.innerText, 'text/html');
+                        frag.appendChild(downloadBtn);
+                    }
+
+                    // Copy — labelled "Copy HTML" for HTML output, "Copy" otherwise.
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'btn btn-sm btn-secondary';
+                    const copyName = isHtml ? 'Copy HTML' : 'Copy';
+                    const copyIdle = '<i class="bi bi-clipboard"></i>' + lbl(copyName);
+                    const copyDone = '<i class="bi bi-check2"></i>' + lbl('Copied');
+                    copyBtn.innerHTML = copyIdle;
+                    copyBtn.title = 'Copy ' + (isHtml ? 'HTML' : 'code');
+                    copyBtn.onclick = async () => {
+                        try {
+                            await navigator.clipboard.writeText(codeEl.innerText);
+                            copyBtn.innerHTML = copyDone;
+                            copyBtn.classList.replace('btn-secondary', 'btn-success');
+                            setTimeout(() => {
+                                copyBtn.innerHTML = copyIdle;
+                                copyBtn.classList.replace('btn-success', 'btn-secondary');
+                            }, 1500);
+                        } catch (e) { console.warn('Copy failed', e); }
+                    };
+                    frag.appendChild(copyBtn);
+                    return frag;
+                }
+
+                // Top: floating overlay (appears on hover), icon-only.
+                const topActions = document.createElement('div');
+                topActions.className = 'code-actions';
+                topActions.appendChild(buildActions(false));
+                wrapper.appendChild(topActions);
+
+                // Bottom: always-visible action bar with labelled buttons.
+                const bottomActions = document.createElement('div');
+                bottomActions.className = 'code-actions-bottom';
+                bottomActions.appendChild(buildActions(true));
+                wrapper.appendChild(bottomActions);
             });
+        }
+
+        /* Detects a full standalone HTML document: starts with <!doctype html>
+           (optionally preceded by whitespace) and ends with </html>. */
+        function isFullHtmlDoc(code) {
+            const t = code.trim().toLowerCase();
+            return t.startsWith('<!doctype html') && t.endsWith('</html>');
+        }
+
+        /* Opens the HTML snippet in a sandboxed iframe inside a modal. */
+        let lastPreviewHtml = '';
+        let previewModal = null;   // assigned once Bootstrap is ready (see below)
+
+        /* Renders an HTML string into the sandboxed iframe, forcing a neutral
+           light color-scheme so the preview never inherits the chatbot/OS theme. */
+        function renderToFrame(html) {
+            const forceLight = '<style>:root{color-scheme:light;}html{background:#fff;}</style>';
+            let previewHtml = html;
+            if (/<head[^>]*>/i.test(previewHtml)) {
+                previewHtml = previewHtml.replace(/<head[^>]*>/i, m => m + forceLight);
+            } else if (/<html[^>]*>/i.test(previewHtml)) {
+                previewHtml = previewHtml.replace(/<html[^>]*>/i, m => m + forceLight);
+            } else {
+                previewHtml = forceLight + previewHtml;
+            }
+            // srcdoc renders the document; sandbox allows scripts but isolates it
+            // from this page (no same-origin access, so it can't read our storage).
+            document.getElementById('preview-frame').srcdoc = previewHtml;
+        }
+
+        function openPreview(html) {
+            lastPreviewHtml = html;                       // current source for copy/download/new-tab
+            document.getElementById('preview-editor').value = html;   // sync the editor
+            renderToFrame(html);
+            previewModal.show();
         }
 
         function renderMarkdown(el, text) {
@@ -704,23 +951,179 @@
             download(`synapse-chat-${stamp()}.md`, lines.join('\n'), 'text/markdown');
         }
 
-        /* ---------- System prompt editor ---------- */
-        const promptInput     = document.getElementById('prompt-input');
-        const promptSaveBtn   = document.getElementById('prompt-save-btn');
-        const promptResetBtn  = document.getElementById('prompt-reset-btn');
-        const promptModalEl   = document.getElementById('prompt-modal');
+        /* ---------- Persona manager ---------- */
+        const personaSelect     = document.getElementById('persona-select');
+        const personaEditSelect = document.getElementById('persona-edit-select');
+        const personaName       = document.getElementById('persona-name');
+        const promptInput        = document.getElementById('prompt-input');
+        const promptSaveBtn      = document.getElementById('prompt-save-btn');
+        const promptApplyBtn     = document.getElementById('prompt-apply-btn');
+        const personaNewBtn      = document.getElementById('persona-new-btn');
+        const personaDeleteBtn   = document.getElementById('persona-delete-btn');
+        const promptModalEl      = document.getElementById('prompt-modal');
+
+        // Fills a <select> with persona names, selecting `selectedName`.
+        function fillPersonaSelect(sel, selectedName) {
+            sel.innerHTML = '';
+            personas.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.name;
+                opt.textContent = p.name;
+                sel.appendChild(opt);
+            });
+            sel.value = selectedName;
+        }
+
+        // Refresh both the header dropdown and the modal editor dropdown.
+        function refreshPersonaUI() {
+            fillPersonaSelect(personaSelect, activePersonaName);
+        }
+        refreshPersonaUI();
+
+        // Apply a persona by name: set the active prompt and restart the chat.
+        function applyPersona(name) {
+            const p = personas.find(x => x.name === name);
+            if (!p) return;
+            activePersonaName = p.name;
+            SYSTEM_PROMPT = p.prompt;
+            localStorage.setItem(ACTIVE_PERSONA_KEY, activePersonaName);
+            fillPersonaSelect(personaSelect, activePersonaName);
+            clearChat(); // starts a fresh conversation with the new system prompt
+        }
+
+        // Header dropdown -> switch persona immediately.
+        personaSelect.addEventListener('change', () => applyPersona(personaSelect.value));
+
+        // ----- Modal editing -----
+        // Load a persona's fields into the editor.
+        function loadPersonaIntoEditor(name) {
+            const p = personas.find(x => x.name === name) || personas[0];
+            personaEditSelect.value = p.name;
+            personaName.value = p.name;
+            promptInput.value = p.prompt;
+        }
 
         promptModalEl.addEventListener('show.bs.modal', () => {
-            promptInput.value = SYSTEM_PROMPT;
+            fillPersonaSelect(personaEditSelect, activePersonaName);
+            loadPersonaIntoEditor(activePersonaName);
         });
-        promptResetBtn.addEventListener('click', () => {
-            promptInput.value = DEFAULT_SYSTEM_PROMPT;
+
+        personaEditSelect.addEventListener('change', () =>
+            loadPersonaIntoEditor(personaEditSelect.value));
+
+        // New: blank slate in the editor.
+        personaNewBtn.addEventListener('click', () => {
+            personaName.value = '';
+            promptInput.value = '';
+            personaName.focus();
         });
+
+        // Delete the currently-selected persona (keep at least one).
+        personaDeleteBtn.addEventListener('click', () => {
+            const name = personaEditSelect.value;
+            if (personas.length <= 1) { alert('You must keep at least one persona.'); return; }
+            if (!confirm(`Delete persona "${name}"?`)) return;
+            personas = personas.filter(p => p.name !== name);
+            if (activePersonaName === name) activePersonaName = personas[0].name;
+            savePersonas();
+            localStorage.setItem(ACTIVE_PERSONA_KEY, activePersonaName);
+            refreshPersonaUI();
+            fillPersonaSelect(personaEditSelect, activePersonaName);
+            loadPersonaIntoEditor(activePersonaName);
+        });
+
+        // Save: create or update a persona from the editor fields.
+        // Returns the saved name, or null if invalid.
+        function savePersonaFromEditor() {
+            const name = personaName.value.trim();
+            const prompt = promptInput.value.trim();
+            if (!name)   { alert('Please enter a persona name.');   personaName.focus(); return null; }
+            if (!prompt) { alert('Please enter a system prompt.');  promptInput.focus(); return null; }
+            const existing = personas.find(p => p.name === name);
+            if (existing) existing.prompt = prompt;          // update
+            else personas.push({ name, prompt });            // create
+            savePersonas();
+            refreshPersonaUI();
+            fillPersonaSelect(personaEditSelect, name);
+            return name;
+        }
+
         promptSaveBtn.addEventListener('click', () => {
-            const newPrompt = promptInput.value.trim() || DEFAULT_SYSTEM_PROMPT;
-            SYSTEM_PROMPT = newPrompt;
-            localStorage.setItem('synapse-system-prompt', newPrompt);
-            clearChat(); // applies the new prompt to a fresh conversation
+            savePersonaFromEditor(); // saves without closing the modal
+        });
+
+        // Apply & restart: save, make active, and start a fresh chat.
+        promptApplyBtn.addEventListener('click', () => {
+            const name = savePersonaFromEditor();
+            if (name) applyPersona(name);
+        });
+
+        /* ---------- HTML live preview ---------- */
+        const previewModalEl = document.getElementById('preview-modal');
+        const previewFrame   = document.getElementById('preview-frame');
+        previewModal = new bootstrap.Modal(previewModalEl);
+
+        // Stop the previewed page (scripts/audio/etc.) when the modal closes,
+        // and reset to preview-only mode for next time.
+        previewModalEl.addEventListener('hidden.bs.modal', () => {
+            previewFrame.srcdoc = '';
+            setEditing(false);
+        });
+
+        // Open the current snippet in a real browser tab.
+        document.getElementById('preview-newtab-btn').addEventListener('click', () => {
+            const blob = new Blob([lastPreviewHtml], { type: 'text/html' });
+            window.open(URL.createObjectURL(blob), '_blank');
+        });
+
+        // Copy the previewed HTML to the clipboard.
+        const previewCopyBtn = document.getElementById('preview-copy-btn');
+        previewCopyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(lastPreviewHtml);
+                previewCopyBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
+            } catch (e) {
+                previewCopyBtn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Failed';
+            }
+            setTimeout(() => previewCopyBtn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy HTML', 1800);
+        });
+
+        // Download the previewed HTML as a .html file.
+        document.getElementById('preview-download-btn').addEventListener('click', () => {
+            download(`synapse-preview-${stamp()}.html`, lastPreviewHtml, 'text/html');
+        });
+
+        // Edit / Run: toggle the source editor and re-render on demand.
+        const previewBody   = document.getElementById('preview-body');
+        const previewEditor = document.getElementById('preview-editor');
+        const previewEditBtn = document.getElementById('preview-edit-btn');
+        const previewRunBtn  = document.getElementById('preview-run-btn');
+
+        function setEditing(on) {
+            previewBody.classList.toggle('editing', on);
+            previewEditor.classList.toggle('d-none', !on);
+            previewRunBtn.classList.toggle('d-none', !on);
+            previewEditBtn.classList.toggle('btn-outline-secondary', !on);
+            previewEditBtn.classList.toggle('btn-secondary', on);
+            if (on) previewEditor.focus();
+        }
+
+        previewEditBtn.addEventListener('click', () => {
+            setEditing(!previewBody.classList.contains('editing'));
+        });
+
+        function runEdits() {
+            lastPreviewHtml = previewEditor.value;   // edits become the new source
+            renderToFrame(lastPreviewHtml);
+        }
+        previewRunBtn.addEventListener('click', runEdits);
+
+        // Ctrl/Cmd+Enter inside the editor re-renders.
+        previewEditor.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                runEdits();
+            }
         });
 
         /* ---------- Events ---------- */
@@ -754,6 +1157,62 @@
                 sendMessage();
             }
         });
+
+        /* ---------- Voice input (Web Speech API) ---------- */
+        const micBtn = document.getElementById('mic-btn');
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+        let listening = false;
+        let baseText = '';   // text already in the field when dictation started
+
+        if (!SpeechRecognition) {
+            // Not supported (e.g. Firefox) — hide the button.
+            micBtn.classList.add('d-none');
+        } else {
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = document.documentElement.lang || 'en-US';
+
+            recognition.onstart = () => {
+                listening = true;
+                micBtn.classList.add('listening');
+                micBtn.title = 'Stop listening';
+                baseText = userInput.value ? userInput.value.replace(/\s*$/, '') + ' ' : '';
+            };
+
+            recognition.onresult = (event) => {
+                let finalText = '';
+                let interimText = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) finalText += transcript;
+                    else interimText += transcript;
+                }
+                if (finalText) baseText += finalText;
+                userInput.value = (baseText + interimText).trimStart();
+                userInput.dispatchEvent(new Event('input')); // auto-resize
+            };
+
+            recognition.onerror = (e) => {
+                console.warn('Speech recognition error:', e.error);
+                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                    alert('Microphone access was blocked. Allow it in your browser to use voice input.');
+                }
+            };
+
+            recognition.onend = () => {
+                listening = false;
+                micBtn.classList.remove('listening');
+                micBtn.title = 'Voice input';
+                userInput.focus();
+            };
+
+            micBtn.addEventListener('click', () => {
+                if (listening) recognition.stop();
+                else { try { recognition.start(); } catch (e) { /* already starting */ } }
+            });
+        }
 
         /* ---------- Init ---------- */
         (function init() {
