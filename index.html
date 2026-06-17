@@ -922,7 +922,7 @@
                     wrapper.appendChild(label);
                 }
 
-                const isHtml = isFullHtmlDoc(codeEl.innerText);
+                const isHtml = isPreviewable(codeEl.innerText);
 
                 // Builds a fresh set of action buttons (each placement needs its
                 // own elements so their per-button state doesn't collide).
@@ -987,11 +987,14 @@
             });
         }
 
-        /* Detects a full standalone HTML document: starts with <!doctype html>
-           (optionally preceded by whitespace) and ends with </html>. */
-        function isFullHtmlDoc(code) {
+        /* Detects code that can be previewed in an iframe:
+           full HTML documents, SVG snippets, or any markup with HTML tags. */
+        function isPreviewable(code) {
             const t = code.trim().toLowerCase();
-            return t.startsWith('<!doctype html') && t.endsWith('</html>');
+            if (t.startsWith('<!doctype html')) return true;
+            if (t.startsWith('<svg')) return true;
+            // Check for common HTML tags
+            return /<(html|body|head|div|canvas|iframe|table|form|input|button|img|video|audio)\b/i.test(code);
         }
 
         /* Opens the HTML snippet in a sandboxed iframe inside a modal. */
