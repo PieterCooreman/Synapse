@@ -1004,14 +1004,25 @@
         /* Renders an HTML string into the sandboxed iframe, forcing a neutral
            light color-scheme so the preview never inherits the chatbot/OS theme. */
         function renderToFrame(html) {
-            const forceLight = '<style>:root{color-scheme:light;}html{background:#fff;}</style>';
+            const forceLight = '<style>:root{color-scheme:light;}html,body{margin:0;background:#fff;}</style>';
             let previewHtml = html;
-            if (/<head[^>]*>/i.test(previewHtml)) {
-                previewHtml = previewHtml.replace(/<head[^>]*>/i, m => m + forceLight);
-            } else if (/<html[^>]*>/i.test(previewHtml)) {
-                previewHtml = previewHtml.replace(/<html[^>]*>/i, m => m + forceLight);
+            const t = html.trim().toLowerCase();
+            const isFullDoc = t.startsWith('<!doctype html') || (t.startsWith('<html'));
+
+            if (isFullDoc) {
+                if (/<head[^>]*>/i.test(previewHtml)) {
+                    previewHtml = previewHtml.replace(/<head[^>]*>/i, m => m + forceLight);
+                } else if (/<html[^>]*>/i.test(previewHtml)) {
+                    previewHtml = previewHtml.replace(/<html[^>]*>/i, m => m + forceLight);
+                }
             } else {
-                previewHtml = forceLight + previewHtml;
+                previewHtml = '<!DOCTYPE html><html><head>'
+                    + '<meta charset="UTF-8">'
+                    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+                    + forceLight
+                    + '</head><body style="margin:0">'
+                    + html
+                    + '</body></html>';
             }
             // srcdoc renders the document; sandbox allows scripts but isolates it
             // from this page (no same-origin access, so it can't read our storage).
