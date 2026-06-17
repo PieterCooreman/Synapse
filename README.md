@@ -6,19 +6,21 @@ Everything (HTML, CSS, and JavaScript) lives in one `index.html` file.
 
 ## Features
 
+- **Multiple chats** — create, switch and delete conversations from a sidebar. Each chat is fully isolated with its own persona, backend, model and temperature.
+- **LAN support** — set a custom IP address and port for your backend, so you can connect to Ollama or LM Studio running on a different machine in your network.
 - **Streaming responses** — tokens render live as the model generates them.
 - **Conversation memory** — the full chat context is sent on each request.
-- **Provider switching** — LM Studio (port `1234`) or Ollama (port `11434`), both via the OpenAI-compatible `/v1` API.
+- **Provider switching** — LM Studio or Ollama, both via the OpenAI-compatible `/v1` API.
 - **Live model list** — models are fetched from the provider's `/v1/models` endpoint, with a refresh button.
-- **Personas / prompt manager** — save, edit and switch between named system prompts (Coding Assistant, Web Designer, Blog Writer, Musician, or your own) from a dropdown. Switching a persona starts a fresh conversation with its prompt.
+- **Personas / prompt manager** — save, edit and switch between named system prompts (Coding Assistant, Web Designer, Blog Writer, Musician, or your own) from a dropdown.
 - **Voice input** — dictate your message with the microphone button, powered by the browser's native Web Speech API (no libraries or API keys).
 - **Markdown + syntax highlighting** — replies render as Markdown with highlighted code blocks and properly sized headings.
 - **Copy buttons** — copy a whole reply, or copy any individual code block.
 - **HTML live preview** — when a reply contains a full HTML document, preview it in a sandboxed, full-screen modal. Edit the source and re-render on the fly, then copy, download, or open it in a new tab. Each HTML block also gets dedicated **Preview / Download / Copy HTML** buttons in the chat.
 - **Dark / light theme** — toggle in the header; the choice (and the code highlight theme) is remembered. Previews always render in a neutral light scheme, independent of the app theme.
 - **Adjustable temperature** — slider from `0` to `2`.
-- **Persistent history** — your conversation is saved to `localStorage` and restored on reload.
-- **Export** — download the conversation as Markdown (`.md`) or JSON (`.json`).
+- **Persistent history** — all conversations and settings are saved to `localStorage` and restored on reload.
+- **Export** — download a conversation as Markdown (`.md`) or JSON (`.json`).
 - **Regenerate & stop** — re-run the last reply, or abort an in-progress generation.
 - **Clear chat** — reset the conversation.
 - **HTML sanitization** — rendered Markdown is sanitized with DOMPurify.
@@ -31,26 +33,11 @@ Everything (HTML, CSS, and JavaScript) lives in one `index.html` file.
 2. Open `index.html` in a modern browser (double-click it, or serve it locally).
 3. Pick your **Persona**, **Backend** and **Model**, then start chatting.
 
+> **Tip:** for LAN use, enter the IP address and port of the machine running your LLM server (e.g. `192.168.1.100` port `1234`).
+
 > **Voice input** requires a Chromium-based browser (Chrome/Edge) and microphone permission. The button hides automatically where the Web Speech API isn't available (e.g. Firefox).
 
 > No dependencies to install — all libraries are loaded from a CDN at runtime, so an internet connection is needed the first time for the stylesheets and scripts (the LLM itself stays local).
-
-## Configuration
-
-Defaults live in the `configs` object inside `index.html`:
-
-```js
-const configs = {
-  'lm-studio': { base: "http://127.0.0.1:1234", models: ["local-model"] },
-  'ollama':    { base: "http://127.0.0.1:11434", models: [] }
-};
-```
-
-Change the `base` URLs there if your servers run on different hosts or ports.
-
-## How it connects
-
-Requests are sent to the OpenAI-compatible `POST /v1/chat/completions` endpoint with `stream: true`, and the model list is pulled from `GET /v1/models`. This is the same API exposed by both LM Studio and Ollama, so the same UI works with either.
 
 ## Tech stack
 

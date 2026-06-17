@@ -272,11 +272,67 @@
             filter: drop-shadow(0 0 6px rgba(110, 168, 254, 0.35));
         }
         .synapse-logo svg { display: block; }
+
+        /* Chat history sidebar */
+        #chat-sidebar {
+            width: 260px;
+            flex: 0 0 260px;
+            overflow-y: auto;
+            border-right: 1px solid var(--bs-border-color);
+            background: var(--bs-body-bg);
+        }
+        #chat-sidebar .chat-list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid var(--bs-border-color);
+            transition: background 0.15s;
+        }
+        #chat-sidebar .chat-list-item:hover { background: var(--bs-tertiary-bg); }
+        #chat-sidebar .chat-list-item.active { background: var(--bs-primary-bg-subtle); }
+        #chat-sidebar .chat-list-item .chat-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 0.85rem;
+        }
+        #chat-sidebar .chat-list-item .chat-delete {
+            opacity: 0;
+            transition: opacity 0.15s;
+            flex-shrink: 0;
+        }
+        #chat-sidebar .chat-list-item:hover .chat-delete { opacity: 0.6; }
+        #chat-sidebar .chat-list-item .chat-delete:hover { opacity: 1; }
+
+        /* Connection settings */
+        .connection-fields {
+            display: flex;
+            gap: 0.35rem;
+            align-items: flex-end;
+        }
+        .connection-fields .form-control {
+            font-size: 0.8rem;
+        }
     </style>
 </head>
 <body class="bg-body-tertiary">
 
-    <div id="chat-container" class="card shadow-lg border">
+    <div id="chat-wrapper" style="display:flex; width:100%; max-width:1200px; height:95vh;">
+        <!-- Chat history sidebar -->
+        <div id="chat-sidebar" class="d-none d-md-flex flex-column">
+            <div class="d-flex align-items-center justify-content-between p-2 border-bottom">
+                <span class="fw-bold small">Chats</span>
+                <button id="new-chat-btn" class="btn btn-sm btn-outline-primary" title="New chat">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+            <div id="chat-list" class="flex-grow-1 overflow-auto"></div>
+        </div>
+
+    <div id="chat-container" class="card shadow-lg border flex-grow-1">
 
         <!-- Header -->
         <div class="card-header d-flex align-items-center justify-content-between py-3 px-4">
@@ -339,7 +395,7 @@
         <!-- Settings -->
         <div class="card-body border-bottom py-2 px-4">
             <div class="row g-2 align-items-end">
-                <div class="col-12 col-sm-3">
+                <div class="col-12 col-sm-2">
                     <label for="persona-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Persona</label>
                     <div class="input-group input-group-sm">
                         <select id="persona-select" class="form-select form-select-sm"></select>
@@ -349,14 +405,18 @@
                         </button>
                     </div>
                 </div>
-                <div class="col-12 col-sm-3">
+                <div class="col-12 col-sm-5">
                     <label for="provider-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Backend</label>
-                    <select id="provider-select" class="form-select form-select-sm">
-                        <option value="lm-studio">LM Studio (1234)</option>
-                        <option value="ollama">Ollama (11434)</option>
-                    </select>
+                    <div class="connection-fields">
+                        <select id="provider-select" class="form-select form-select-sm" style="flex:0 0 auto; width:auto;">
+                            <option value="lm-studio">LM Studio</option>
+                            <option value="ollama">Ollama</option>
+                        </select>
+                        <input id="host-input" type="text" class="form-control form-control-sm" placeholder="Host" style="width:130px;" title="Backend host IP address">
+                        <input id="port-input" type="text" class="form-control form-control-sm" placeholder="Port" style="width:65px;" title="Backend port number">
+                    </div>
                 </div>
-                <div class="col-12 col-sm-4">
+                <div class="col-12 col-sm-3">
                     <label for="model-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Model</label>
                     <div class="input-group input-group-sm">
                         <select id="model-select" class="form-select form-select-sm"></select>
@@ -415,6 +475,7 @@
             </div>
         </div>
     </div>
+    </div> <!-- /chat-wrapper -->
 
     <!-- Persona manager modal -->
     <div class="modal fade" id="prompt-modal" tabindex="-1" aria-hidden="true">
@@ -520,6 +581,10 @@
         const tempWarn      = document.getElementById('temp-warn');
         const statusDot     = document.getElementById('status-dot');
         const hljsTheme     = document.getElementById('hljs-theme');
+        const hostInput     = document.getElementById('host-input');
+        const portInput     = document.getElementById('port-input');
+        const chatListEl    = document.getElementById('chat-list');
+        const newChatBtn    = document.getElementById('new-chat-btn');
 
         let currentAbortController = null;
 
@@ -558,14 +623,19 @@
 		];
 
         function loadPersonas() {
+            let list;
             try {
                 const raw = localStorage.getItem(PERSONAS_KEY);
                 if (raw) {
                     const arr = JSON.parse(raw);
-                    if (Array.isArray(arr) && arr.length) return arr;
+                    if (Array.isArray(arr) && arr.length) list = arr;
                 }
             } catch (e) { console.warn('Could not load personas', e); }
-            return DEFAULT_PERSONAS.slice();
+            if (!list) list = DEFAULT_PERSONAS.slice();
+            if (!list.some(p => p.name === 'None')) {
+                list.unshift({ name: "None", temp: 0.6, prompt: "" });
+            }
+            return list;
         }
         function savePersonas() {
             localStorage.setItem(PERSONAS_KEY, JSON.stringify(personas));
@@ -581,41 +651,205 @@
         // SYSTEM_PROMPT stays the single source of truth used by the rest of the app.
         let SYSTEM_PROMPT = getActivePersona().prompt;
 
-        const configs = {
-            'lm-studio': {
-                base: "http://127.0.0.1:1234",
-                models: ["local-model"]
-            },
-            'ollama': {
-                base: "http://127.0.0.1:11434",
-                models: []
-            }
+        const DEFAULT_CONFIGS = {
+            'lm-studio': { host: "127.0.0.1", port: "1234" },
+            'ollama':    { host: "127.0.0.1", port: "11434" }
         };
+
+        function getBase(provider) {
+            const host = hostInput.value.trim() || DEFAULT_CONFIGS[provider].host;
+            const port = portInput.value.trim() || DEFAULT_CONFIGS[provider].port;
+            return `http://${host}:${port}`;
+        }
+
+        function getConfigs(provider) {
+            return { base: getBase(provider), models: [] };
+        }
+
+        function saveConnection() {
+            localStorage.setItem('synapse-host-' + providerSelect.value, hostInput.value);
+            localStorage.setItem('synapse-port-' + providerSelect.value, portInput.value);
+        }
+
+        function loadConnection() {
+            const provider = providerSelect.value;
+            const def = DEFAULT_CONFIGS[provider];
+            hostInput.value = localStorage.getItem('synapse-host-' + provider) || def.host;
+            portInput.value = localStorage.getItem('synapse-port-' + provider) || def.port;
+        }
 
         let messagesContext = [{ role: "system", content: SYSTEM_PROMPT }];
 
         /* ---------- Conversation persistence ---------- */
-        const HISTORY_KEY = 'synapse-history';
+        const CHATS_KEY = 'synapse-chats';
+        const ACTIVE_CHAT_KEY = 'synapse-active-chat';
 
-        function saveHistory() {
-            try {
-                localStorage.setItem(HISTORY_KEY, JSON.stringify(messagesContext));
-            } catch (e) { console.warn('Could not save history', e); }
+        let chats = loadChats();
+        let activeChatId = null;
+
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
         }
 
-        function loadHistory() {
+        function loadChats() {
             try {
-                const raw = localStorage.getItem(HISTORY_KEY);
-                if (!raw) return false;
-                const saved = JSON.parse(raw);
-                if (!Array.isArray(saved) || saved.length === 0) return false;
-                messagesContext = saved;
-                // Keep the system prompt in sync with whatever was stored.
-                if (saved[0]?.role === 'system') SYSTEM_PROMPT = saved[0].content;
-                return true;
-            } catch (e) {
-                console.warn('Could not load history', e);
-                return false;
+                const raw = localStorage.getItem(CHATS_KEY);
+                if (raw) {
+                    const arr = JSON.parse(raw);
+                    if (Array.isArray(arr) && arr.length) return arr;
+                }
+            } catch (e) { console.warn('Could not load chats', e); }
+            return [];
+        }
+
+        function saveChats() {
+            try {
+                localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
+            } catch (e) { console.warn('Could not save chats', e); }
+        }
+
+        function getActiveChat() {
+            return chats.find(c => c.id === activeChatId) || null;
+        }
+
+        function createNewChat() {
+            const chat = {
+                id: generateId(),
+                name: 'New Chat',
+                messages: [{ role: "system", content: SYSTEM_PROMPT }],
+                provider: providerSelect.value,
+                model: modelSelect.value,
+                temperature: parseFloat(tempRange.value),
+                persona: activePersonaName,
+                createdAt: Date.now()
+            };
+            chats.unshift(chat);
+            activeChatId = chat.id;
+            saveChats();
+            messagesContext = chat.messages;
+            renderChatList();
+            chatHistory.innerHTML = '';
+            const welcome = addMessageToUI("", 'bot-message');
+            renderMarkdown(welcome, "New conversation started. **Ready when you are.**");
+            regenerateBtn.disabled = true;
+            setStatus('idle');
+            return chat;
+        }
+
+        function switchChat(chatId) {
+            if (currentAbortController) return;
+            const chat = chats.find(c => c.id === chatId);
+            if (!chat) return;
+            activeChatId = chatId;
+            localStorage.setItem(ACTIVE_CHAT_KEY, chatId);
+            messagesContext = chat.messages;
+
+            // Restore all per-chat settings into the UI
+            if (chat.messages[0]?.role === 'system') SYSTEM_PROMPT = chat.messages[0].content;
+            if (chat.persona) {
+                activePersonaName = chat.persona;
+                localStorage.setItem(ACTIVE_PERSONA_KEY, activePersonaName);
+                fillPersonaSelect(personaSelect, activePersonaName);
+            }
+            if (chat.provider) { providerSelect.value = chat.provider; loadConnection(); }
+            if (chat.model) modelSelect.value = chat.model;
+            if (typeof chat.temperature === 'number') setTemperature(chat.temperature);
+
+            renderHistory();
+            renderChatList();
+        }
+
+        function deleteChat(chatId) {
+            chats = chats.filter(c => c.id !== chatId);
+            if (chats.length === 0) {
+                createNewChat();
+            } else if (activeChatId === chatId) {
+                switchChat(chats[0].id);
+            }
+            saveChats();
+            renderChatList();
+        }
+
+        function updateChatName() {
+            const chat = getActiveChat();
+            if (!chat) return;
+            // Use first user message as chat name
+            const firstUser = chat.messages.find(m => m.role === 'user');
+            if (firstUser) {
+                chat.name = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? '…' : '');
+                saveChats();
+                renderChatList();
+            }
+        }
+
+        function renderChatList() {
+            chatListEl.innerHTML = '';
+            chats.forEach(chat => {
+                const item = document.createElement('div');
+                item.className = 'chat-list-item' + (chat.id === activeChatId ? ' active' : '');
+
+                const title = document.createElement('span');
+                title.className = 'chat-title';
+                title.textContent = chat.name;
+                item.appendChild(title);
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'btn btn-sm btn-link p-0 chat-delete text-danger';
+                delBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+                delBtn.title = 'Delete chat';
+                delBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (confirm('Delete this chat?')) deleteChat(chat.id);
+                });
+                item.appendChild(delBtn);
+
+                item.addEventListener('click', () => switchChat(chat.id));
+                chatListEl.appendChild(item);
+            });
+        }
+
+        // Legacy support: migrate single HISTORY_KEY to multi-chat format
+        function migrateLegacyHistory() {
+            try {
+                const raw = localStorage.getItem('synapse-history');
+                if (raw) {
+                    const saved = JSON.parse(raw);
+                    if (Array.isArray(saved) && saved.length > 0) {
+                        const chat = {
+                            id: generateId(),
+                            name: 'Imported Chat',
+                            messages: saved,
+                            provider: providerSelect.value,
+                            model: modelSelect.value,
+                            temperature: parseFloat(tempRange.value),
+                            persona: activePersonaName,
+                            createdAt: Date.now()
+                        };
+                        // Use first user message as name
+                        const firstUser = saved.find(m => m.role === 'user');
+                        if (firstUser) {
+                            chat.name = firstUser.content.slice(0, 40) + (firstUser.content.length > 40 ? '…' : '');
+                        }
+                        chats.unshift(chat);
+                        activeChatId = chat.id;
+                        saveChats();
+                        localStorage.removeItem('synapse-history');
+                        return true;
+                    }
+                }
+            } catch(e) {}
+            return false;
+        }
+
+        function saveHistory() {
+            const chat = getActiveChat();
+            if (chat) {
+                chat.messages = messagesContext;
+                chat.provider = providerSelect.value;
+                chat.model = modelSelect.value;
+                chat.temperature = parseFloat(tempRange.value);
+                chat.persona = activePersonaName;
+                saveChats();
             }
         }
 
@@ -813,13 +1047,13 @@
                 opt.value = m; opt.textContent = m;
                 modelSelect.appendChild(opt);
             });
-            const saved = localStorage.getItem('synapse-model');
-            if (saved && models.includes(saved)) modelSelect.value = saved;
+            const chat = getActiveChat();
+            if (chat?.model && models.includes(chat.model)) modelSelect.value = chat.model;
         }
 
         async function loadModels() {
             const provider = providerSelect.value;
-            const cfg = configs[provider];
+            const cfg = getConfigs(provider);
             const name = provider === 'lm-studio' ? 'LM Studio' : 'Ollama';
             // Try live model list from the OpenAI-compatible /v1/models endpoint
             try {
@@ -836,11 +1070,11 @@
                     return;
                 }
                 // Reachable but returned an HTTP error.
-                fillModelDropdown(cfg.models, 'Backend error from ' + name);
+                fillModelDropdown([], 'Backend error from ' + name);
                 setStatus('error', name + ' responded with an error.');
             } catch (e) {
                 // Connection refused / network failure => backend not running.
-                fillModelDropdown(cfg.models, name + ' offline — start it & refresh');
+                fillModelDropdown([], name + ' offline — start it & refresh');
                 setStatus('offline',
                     `${name} is not reachable at ${cfg.base}. Start the local server `
                     + `(enable CORS) and click the refresh button.`);
@@ -912,6 +1146,9 @@
             userInput.value = '';
             userInput.style.height = 'auto';
             await streamReply(userMsgElement);
+
+            // Update chat name after first user message
+            updateChatName();
         }
 
         async function streamReply(userMsgElement) {
@@ -919,6 +1156,9 @@
             sendBtn.classList.add('d-none');
             cancelBtn.classList.remove('d-none');
             regenerateBtn.disabled = true;
+            newChatBtn.disabled = true;
+            chatListEl.style.pointerEvents = 'none';
+            chatListEl.style.opacity = '0.5';
             setStatus('busy');
 
             const botMsgElement = addMessageToUI("", 'bot-message');
@@ -926,7 +1166,7 @@
 
             currentAbortController = new AbortController();
             const provider = providerSelect.value;
-            const url = configs[provider].base + '/v1/chat/completions';
+            const url = getConfigs(provider).base + '/v1/chat/completions';
             const model = modelSelect.value;
 
             const startTime = performance.now();
@@ -1033,6 +1273,9 @@
                 userInput.disabled = false;
                 userInput.focus();
                 currentAbortController = null;
+                newChatBtn.disabled = false;
+                chatListEl.style.pointerEvents = '';
+                chatListEl.style.opacity = '';
             }
         }
 
@@ -1050,13 +1293,7 @@
 
         /* ---------- Clear conversation ---------- */
         function clearChat() {
-            messagesContext = [{ role: "system", content: SYSTEM_PROMPT }];
-            localStorage.removeItem(HISTORY_KEY);
-            chatHistory.innerHTML = '';
-            const welcome = addMessageToUI("", 'bot-message');
-            renderMarkdown(welcome, "Conversation cleared. **Ready when you are.**");
-            regenerateBtn.disabled = true;
-            setStatus('idle');
+            createNewChat();
         }
 
         /* ---------- Export conversation ---------- */
@@ -1129,7 +1366,17 @@
             localStorage.setItem(ACTIVE_PERSONA_KEY, activePersonaName);
             fillPersonaSelect(personaSelect, activePersonaName);
             if (typeof p.temp === 'number') setTemperature(p.temp);
-            clearChat(); // starts a fresh conversation with the new system prompt
+
+            const hasUserMessages = messagesContext.some(m => m.role === 'user');
+            if (hasUserMessages) {
+                createNewChat();
+            } else {
+                messagesContext[0] = { role: "system", content: SYSTEM_PROMPT };
+                saveHistory();
+                chatHistory.innerHTML = '';
+                const welcome = addMessageToUI("", 'bot-message');
+                renderMarkdown(welcome, `Persona set to **${p.name}**. ${p.prompt ? 'Ready when you are.' : 'No system prompt — starting fresh.'}`);
+            }
         }
 
         // Header dropdown -> switch persona immediately.
@@ -1277,11 +1524,15 @@
         document.getElementById('export-json-btn').addEventListener('click', exportJSON);
 
         providerSelect.addEventListener('change', () => {
-            localStorage.setItem('synapse-provider', providerSelect.value);
+            loadConnection();
             loadModels();
+            saveHistory();
         });
-        modelSelect.addEventListener('change', () =>
-            localStorage.setItem('synapse-model', modelSelect.value));
+        modelSelect.addEventListener('change', () => saveHistory());
+
+        hostInput.addEventListener('change', () => { saveConnection(); loadModels(); });
+        portInput.addEventListener('change', () => { saveConnection(); loadModels(); });
+        newChatBtn.addEventListener('click', createNewChat);
 
         // Highlight risky temperatures (>1.0 tends to produce incoherent output).
         function reflectTempWarning() {
@@ -1298,14 +1549,13 @@
             const t = Math.min(max, Math.max(min, parseFloat(value)));
             tempRange.value = t;
             tempValue.textContent = t.toFixed(1);
-            localStorage.setItem('synapse-temp', t);
             reflectTempWarning();
         }
 
         tempRange.addEventListener('input', () => {
             tempValue.textContent = parseFloat(tempRange.value).toFixed(1);
-            localStorage.setItem('synapse-temp', tempRange.value);
             reflectTempWarning();
+            saveHistory();
         });
 
         userInput.addEventListener('input', function () {
@@ -1377,17 +1627,44 @@
 
         /* ---------- Init ---------- */
         (function init() {
-            const sp = localStorage.getItem('synapse-provider');
-            if (sp) providerSelect.value = sp;
-            const st = localStorage.getItem('synapse-temp');
-            if (st) { tempRange.value = st; tempValue.textContent = parseFloat(st).toFixed(1); }
-            reflectTempWarning();
-
             // Bootstrap popovers are opt-in: initialize the temperature help popover.
             document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el =>
                 new bootstrap.Popover(el, { container: 'body' }));
 
-            const restored = loadHistory() && renderHistory();
+            // Migrate legacy single-chat to multi-chat format
+            migrateLegacyHistory();
+
+            // Restore active chat or create first chat
+            const savedActiveId = localStorage.getItem(ACTIVE_CHAT_KEY);
+            if (savedActiveId && chats.some(c => c.id === savedActiveId)) {
+                activeChatId = savedActiveId;
+            } else if (chats.length > 0) {
+                activeChatId = chats[0].id;
+                localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
+            } else {
+                createNewChat();
+                loadModels();
+                userInput.focus();
+                return;
+            }
+
+            const chat = getActiveChat();
+            messagesContext = chat.messages;
+            if (chat.messages[0]?.role === 'system') SYSTEM_PROMPT = chat.messages[0].content;
+
+            // Restore all per-chat settings into the UI
+            if (chat.persona) {
+                activePersonaName = chat.persona;
+                localStorage.setItem(ACTIVE_PERSONA_KEY, activePersonaName);
+                fillPersonaSelect(personaSelect, activePersonaName);
+            }
+            if (chat.provider) providerSelect.value = chat.provider;
+            if (chat.model) modelSelect.value = chat.model;
+            if (typeof chat.temperature === 'number') setTemperature(chat.temperature);
+            loadConnection();
+
+            renderChatList();
+            const restored = renderHistory();
             if (!restored) {
                 chatHistory.innerHTML = '';
                 const welcome = addMessageToUI("", 'bot-message');
