@@ -1092,8 +1092,12 @@
                 const host = hostInput.value.trim();
                 const isRemote = host && host !== '127.0.0.1' && host !== 'localhost';
                 const isFileProtocol = location.protocol === 'file:';
+                const isHttps = location.protocol === 'https:';
                 let msg = '';
-                if (isRemote && isFileProtocol) {
+                if (isRemote && isHttps) {
+                    msg = `HTTPS pages cannot connect to HTTP servers (Mixed Content). `
+                        + `Serve Synapse over HTTP locally: <code>npx serve .</code>`;
+                } else if (isRemote && isFileProtocol) {
                     msg = 'Serve Synapse over HTTP first (npx serve .) — browsers block remote requests from file:// URLs.';
                 } else if (isRemote) {
                     msg = `${name} is not reachable at ${cfg.base}. Ensure the server is running and allows CORS from your IP.`;
@@ -1286,8 +1290,12 @@
                     const host = hostInput.value.trim();
                     const isRemote = host && host !== '127.0.0.1' && host !== 'localhost';
                     const isFileProtocol = location.protocol === 'file:';
+                    const isHttps = location.protocol === 'https:';
                     let help = '';
-                    if (isRemote && isFileProtocol) {
+                    if (isRemote && isHttps) {
+                        help = `HTTPS pages cannot connect to HTTP servers (Mixed Content). `
+                            + 'Serve Synapse over HTTP locally: <code>npx serve .</code>';
+                    } else if (isRemote && isFileProtocol) {
                         help = `Cannot reach <strong>${host}:${portInput.value}</strong> from a local file. `
                             + 'Serve Synapse over HTTP first: <code>npx serve .</code> or <code>python -m http.server</code>. '
                             + 'Then make sure your server allows CORS from your IP.';

@@ -35,6 +35,8 @@ Everything (HTML, CSS, and JavaScript) lives in one `index.html` file.
 
 > **Tip:** for LAN use, enter the IP address and port of the machine running your LLM server (e.g. `192.168.1.100` port `1234`).
 
+> **Remote / WAN use:** browsers block requests from `file://` to remote servers, and HTTPS pages cannot connect to HTTP servers (Mixed Content). Serve Synapse over HTTP locally (e.g. `npx serve .` or `python -m http.server`), then connect. Your LLM server must also allow CORS connections from your browser's origin.
+
 > **Voice input** requires a Chromium-based browser (Chrome/Edge) and microphone permission. The button hides automatically where the Web Speech API isn't available (e.g. Firefox).
 
 > No dependencies to install — all libraries are loaded from a CDN at runtime, so an internet connection is needed the first time for the stylesheets and scripts (the LLM itself stays local).
