@@ -37,6 +37,24 @@ Everything (HTML, CSS, and JavaScript) lives in one `index.html` file.
 
 > **Remote / WAN use:** browsers block requests from `file://` to remote servers, and HTTPS pages cannot connect to HTTP servers (Mixed Content). Serve Synapse over HTTP locally (e.g. `npx serve .` or `python -m http.server`), then connect. Your LLM server must also allow CORS connections from your browser's origin.
 
+### Multiple parallel sessions
+
+Each browser tab has its own `localStorage`, but tabs sharing the **same URL** also share storage — so switching between chats in one tab affects the others. To run fully isolated sessions side by side, each session needs a **different origin**.
+
+One way to achieve this: host Synapse under multiple subdomains, each pointing to the same `index.html`:
+
+```
+http://synapse1.example.com/
+http://synapse2.example.com/
+http://synapse3.example.com/
+http://synapse4.example.com/
+http://synapse5.example.com/
+```
+
+Each URL is a separate origin, so every session gets its own chats, personas and settings. Users can open up to 5 independent sessions this way.
+
+> **Tip:** the same trick works with different ports on localhost (e.g. `http://localhost:3001/`, `http://localhost:3002/`, …).
+
 > **Voice input** requires a Chromium-based browser (Chrome/Edge) and microphone permission. The button hides automatically where the Web Speech API isn't available (e.g. Firefox).
 
 > No dependencies to install — all libraries are loaded from a CDN at runtime, so an internet connection is needed the first time for the stylesheets and scripts (the LLM itself stays local).
