@@ -43,11 +43,11 @@ Each browser tab has its own `localStorage`, but tabs sharing the **same URL** a
 
 One way to achieve this: host Synapse under multiple subdomains, each pointing to the same `index.html`:
 
-- [synapse1.example.com](http://synapse1.example.com/)
-- [synapse2.example.com](http://synapse2.example.com/)
-- [synapse3.example.com](http://synapse3.example.com/)
-- [synapse4.example.com](http://synapse4.example.com/)
-- [synapse5.example.com](http://synapse5.example.com/)
+- [synapse1.quickersite.com](http://synapse1.quickersite.com/)
+- [synapse2.quickersite.com](http://synapse2.quickersite.com/)
+- [synapse3.quickersite.com](http://synapse3.quickersite.com/)
+- [synapse4.quickersite.com](http://synapse4.quickersite.com/)
+- [synapse5.quickersite.com](http://synapse5.quickersite.com/)
 
 Each URL is a separate origin, so every session gets its own chats, personas and settings. Users can open up to 5 independent sessions this way.
 
