@@ -1089,11 +1089,19 @@
                 fillModelDropdown([], 'Backend error from ' + name);
                 setStatus('error', name + ' responded with an error.');
             } catch (e) {
-                // Connection refused / network failure => backend not running.
-                fillModelDropdown([], name + ' offline — start it & refresh');
-                setStatus('offline',
-                    `${name} is not reachable at ${cfg.base}. Start the local server `
-                    + `(enable CORS) and click the refresh button.`);
+                const host = hostInput.value.trim();
+                const isRemote = host && host !== '127.0.0.1' && host !== 'localhost';
+                const isFileProtocol = location.protocol === 'file:';
+                let msg = '';
+                if (isRemote && isFileProtocol) {
+                    msg = 'Serve Synapse over HTTP first (npx serve .) — browsers block remote requests from file:// URLs.';
+                } else if (isRemote) {
+                    msg = `${name} is not reachable at ${cfg.base}. Ensure the server is running and allows CORS from your IP.`;
+                } else {
+                    msg = `${name} is not reachable at ${cfg.base}. Start the local server (enable CORS) and click the refresh button.`;
+                }
+                fillModelDropdown([], isRemote ? 'Remote server unreachable' : name + ' offline — start it & refresh');
+                setStatus('offline', msg);
             }
         }
 
@@ -1270,16 +1278,28 @@
             } catch (error) {
                 if (error.name === 'AbortError') {
                     botMsgElement.remove();
-                    // Keep the user's message and context turn so they can retry/regenerate.
                     setStatus('idle');
                     regenerateBtn.disabled = false;
                 } else {
                     console.error("Connection Error:", error);
                     botMsgElement.className = 'message system-error alert alert-danger mb-0';
-                    const help = (provider === 'lm-studio')
-                        ? "Ensure LM Studio's local server is running and CORS is enabled."
-                        : 'Ensure Ollama is running and the OLLAMA_ORIGINS="*" environment flag is set.';
-                    botMsgElement.textContent = `Cannot connect. ${help} (${error.message})`;
+                    const host = hostInput.value.trim();
+                    const isRemote = host && host !== '127.0.0.1' && host !== 'localhost';
+                    const isFileProtocol = location.protocol === 'file:';
+                    let help = '';
+                    if (isRemote && isFileProtocol) {
+                        help = `Cannot reach <strong>${host}:${portInput.value}</strong> from a local file. `
+                            + 'Serve Synapse over HTTP first: <code>npx serve .</code> or <code>python -m http.server</code>. '
+                            + 'Then make sure your server allows CORS from your IP.';
+                    } else if (isRemote) {
+                        help = `Cannot reach <strong>${host}:${portInput.value}</strong>. `
+                            + 'Ensure the remote server is running and allows CORS connections from your browser.';
+                    } else if (provider === 'lm-studio') {
+                        help = "Ensure LM Studio's local server is running and CORS is enabled.";
+                    } else {
+                        help = 'Ensure Ollama is running and the OLLAMA_ORIGINS="*" environment flag is set.';
+                    }
+                    botMsgElement.innerHTML = `Cannot connect. ${help}<br><small class="text-muted">${error.message}</small>`;
                     messagesContext.pop();
                     setStatus('error');
                 }
