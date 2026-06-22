@@ -20,6 +20,9 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <script src="rag-data.js"></script>
+    <!-- In-browser ASP/VBScript runtime (ASPPY via Pyodide) — used by the ASPPY Expert persona -->
+    <script src="asp-runner.js"></script>
 
     <style>
         :root { --chat-max: 900px; }
@@ -165,6 +168,33 @@
         }
         /* When the editor is visible, split the body 50/50 */
         #preview-body:not(.editing) #preview-editor { display: none !important; }
+
+        /* ASP runner modal — fills the fullscreen modal body */
+        #asp-modal .modal-body { display: flex; flex-direction: column; gap: 0.5rem; overflow: hidden; }
+        /* Simulated request panel sits above the output frame */
+        #asp-request { flex: 0 0 auto; }
+        #asp-frame {
+            width: 100%;
+            height: 100%;
+            flex: 1;
+            border: 0;
+            border-radius: 0.5rem;
+            background: #fff;
+        }
+        /* Status / error strip under the ASP output frame */
+        #asp-status {
+            flex: 0 0 auto;
+            font-size: 0.8rem;
+            font-family: var(--bs-font-monospace, monospace);
+            padding: 0.4rem 0.6rem;
+            border-radius: 0.4rem;
+            background: var(--bs-tertiary-bg);
+            color: var(--bs-secondary-color);
+            white-space: pre-wrap;
+            max-height: 9rem;
+            overflow: auto;
+        }
+        #asp-status.has-error { color: #ea868f; }
 
         .message-meta {
             font-size: 0.72rem;
@@ -563,6 +593,57 @@
         </div>
     </div>
 
+    <!-- In-browser ASP runner modal (ASPPY Expert persona) -->
+    <div class="modal fade" id="asp-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-fullscreen">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title me-auto"><i class="bi bi-play-circle me-2"></i>Run ASP <small class="text-secondary ms-2">in-browser via ASPPY</small></h5>
+                    <div class="d-flex align-items-center gap-2">
+                        <button id="asp-rerun-btn" class="btn btn-sm btn-primary" title="Run the ASP code again">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Re-run
+                        </button>
+                        <button id="asp-copy-btn" class="btn btn-sm btn-outline-secondary" title="Copy ASP source">
+                            <i class="bi bi-clipboard me-1"></i>Copy ASP
+                        </button>
+                        <button id="asp-newtab-btn" class="btn btn-sm btn-outline-secondary" title="Open the rendered output in a new tab">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>New tab
+                        </button>
+                        <button type="button" class="btn-close ms-2" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                </div>
+                <div class="modal-body p-2" id="asp-body">
+                    <!-- Simulated request panel: drives Request.QueryString / Request.Form -->
+                    <div id="asp-request" class="d-flex flex-wrap align-items-end gap-2">
+                        <div>
+                            <label class="form-label mb-1 small text-secondary">Method</label>
+                            <select id="asp-method" class="form-select form-select-sm">
+                                <option value="GET">GET</option>
+                                <option value="POST">POST</option>
+                            </select>
+                        </div>
+                        <div class="flex-grow-1" style="min-width:200px">
+                            <label class="form-label mb-1 small text-secondary">Query string</label>
+                            <input id="asp-qs" type="text" class="form-control form-control-sm font-monospace"
+                                   placeholder="name=Ada&age=36" spellcheck="false">
+                        </div>
+                        <div class="flex-grow-1" id="asp-form-wrap" style="min-width:200px">
+                            <label class="form-label mb-1 small text-secondary">Form body (POST)</label>
+                            <input id="asp-form" type="text" class="form-control form-control-sm font-monospace"
+                                   placeholder="key=value&key2=value2" spellcheck="false" disabled>
+                        </div>
+                        <button id="asp-run-req-btn" class="btn btn-sm btn-primary">
+                            <i class="bi bi-play-fill me-1"></i>Run with request
+                        </button>
+                    </div>
+                    <iframe id="asp-frame" sandbox="allow-scripts allow-forms allow-modals allow-popups"
+                            referrerpolicy="no-referrer"></iframe>
+                    <div id="asp-status">Loading…</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         /* ---------- Element refs ---------- */
@@ -618,10 +699,11 @@
 			{ name: "Python Developer",    temp: 0.2, prompt: "You are an expert Python developer who favors clean, vanilla, dependency-minimal code. You write performant, modern Python. Provide brief architectural context before your code. IMPORTANT: You must ALWAYS wrap Python code inside triple backtick (```python) Markdown blocks." 
 			},
 			{ name: "Rubber Duck (Debug)",temp: 0.4, prompt: "You are a 'rubber duck' debugging assistant. Do not write the full solution immediately. Ask probing questions, point out logical flaws in my code, and guide me to find the answer myself. Be analytical and concise." },
-			{ name: "Single-File HTML Builder", temp: 0.3, prompt: "You build complete, self-contained single-file websites. ALWAYS output exactly ONE complete index.html document and nothing else. Put ALL CSS inside a single <style> tag in the <head>, and ALL JavaScript inside a single <script> tag before </body> — never reference external .css or .js files. Output ONLY one fenced ```html code block: no explanations, no commentary, no design critique, and no multiple code blocks. The file must be ready to save and open directly in a browser. Do not use placeholder asset paths that require external files; if you need images, use inline SVG, CSS gradients, or data URIs. Write clean, modern, responsive markup." },
+			{ name: "Single-File HTML Builder", temp: 0.3, prompt: "You build complete, self-contained single-file websites, using Bootstrap 5 (latest version, via CDN). ALWAYS output exactly ONE complete index.html document and nothing else. Put ALL CSS inside a single <style> tag in the <head>, and ALL JavaScript inside a single <script> tag before </body> — never reference external .css or .js files. Output ONLY one fenced ```html code block: no explanations, no commentary, no design critique, and no multiple code blocks. The file must be ready to save and open directly in a browser. Do not use placeholder asset paths that require external files; if you need images, use inline SVG, CSS gradients, or data URIs. Write clean, modern, responsive markup." },
 			{ name: "Teacher",            temp: 0.6, prompt: "You are a patient and encouraging teacher. Break down complex concepts into simple, easy-to-understand explanations. Use analogies, step-by-step examples, and ask guiding questions to check for understanding. Adapt your tone to be supportive and do not simply give away the answer if the user is trying to learn how to solve a problem themselves." },
 			{ name: "Text Summarizer",    temp: 0.3, prompt: "You are a precise summarization tool. Distill the provided text into its core arguments and key facts. Use bullet points and bold text for readability. Strictly avoid adding external information or your own opinions." },
 			{ name: "Web Designer",     temp: 0.5, prompt: "You are a senior web/UI designer. Give opinionated, practical design advice on layout, spacing, color, typography and accessibility. When you produce HTML/CSS, wrap it in fenced code blocks and prefer clean, modern, responsive markup." },
+			{ name: "ASPPY Expert", temp: 0.3, prompt: "You write simple Classic ASP/VBScript pages. Always produce ONE single .asp file with straightforward top-to-bottom code: read input with Request.QueryString/Request.Form, do the logic, and Response.Write the HTML as you go. Style every page with the latest Bootstrap 5 from a CDN (link the Bootstrap CSS in the <head> and use Bootstrap classes/components) so the output always looks clean; keep any extra CSS in one small inline <style>. Write correct VBScript: & for string concatenation (not +), Set for object assignment, Dim your variables; HTML-encode user output with Server.HTMLEncode(); validate numbers with IsNumeric() then CInt(). Remember VBScript And does NOT short-circuit. Keep data in-memory (arrays, Scripting.Dictionary) — do NOT use a database, file system, or external services, because the code runs in a sandbox without them. Output the whole page inside ONE fenced ```asp code block, nothing else." },
 		];
 
         function loadPersonas() {
@@ -938,6 +1020,12 @@
                 }
 
                 const isHtml = isPreviewable(codeEl.innerText);
+                // Offer "Run ASP" only for ASP/VBScript code while the ASPPY
+                // Expert persona is active (that's when an in-browser run helps).
+                const langName = langMatch ? langMatch.replace('language-', '').toLowerCase() : '';
+                const isAsp = activePersonaName === 'ASPPY Expert'
+                    && (['asp', 'aspx', 'vbscript', 'vbs', 'classic-asp'].includes(langName)
+                        || isAspCode(codeEl.innerText));
 
                 // Builds a fresh set of action buttons (each placement needs its
                 // own elements so their per-button state doesn't collide).
@@ -945,6 +1033,16 @@
                 function buildActions(withLabel) {
                     const frag = document.createDocumentFragment();
                     const lbl = (text) => withLabel ? ' ' + text : '';
+
+                    if (isAsp) {
+                        // Run ASP — execute in-browser via ASPPY (Pyodide).
+                        const runBtn = document.createElement('button');
+                        runBtn.className = 'btn btn-sm btn-primary';
+                        runBtn.innerHTML = '<i class="bi bi-play-circle"></i>' + lbl('Run ASP');
+                        runBtn.title = 'Run this ASP code in the browser';
+                        runBtn.onclick = () => openAspRunner(codeEl.innerText);
+                        frag.appendChild(runBtn);
+                    }
 
                     if (isHtml) {
                         // Preview
@@ -1002,6 +1100,15 @@
             });
         }
 
+        /* Heuristic: does this look like Classic ASP/VBScript? Used as a
+           fallback when a code block isn't explicitly tagged as asp/vbscript. */
+        function isAspCode(code) {
+            // ASP script delimiters are the strongest signal.
+            if (/<%[=@]?[\s\S]*?%>/.test(code)) return true;
+            // Otherwise look for VBScript idioms in a bare script block.
+            return /\b(Response\.Write|Request\.(QueryString|Form)|Server\.(CreateObject|MapPath|HTMLEncode)|Dim\s+\w+|Set\s+\w+\s*=|ASPPY\.)/.test(code);
+        }
+
         /* Detects code that can be previewed in an iframe:
            full HTML documents, SVG snippets, or any markup with HTML tags. */
         function isPreviewable(code) {
@@ -1049,6 +1156,130 @@
             document.getElementById('preview-editor').value = html;   // sync the editor
             renderToFrame(html);
             previewModal.show();
+        }
+
+        /* ---------- In-browser ASP runner (ASPPY via Pyodide) ---------- */
+        let aspModal = null;          // assigned once Bootstrap is ready
+        let lastAspCode = '';         // current ASP source (for copy/re-run)
+        let lastAspBody = '';         // last rendered HTML output (for new-tab)
+
+        function setAspStatus(text, isError) {
+            const el = document.getElementById('asp-status');
+            if (!el) return;
+            el.textContent = text;
+            el.classList.toggle('has-error', !!isError);
+        }
+
+        // Pre-load Pyodide + ASPPY in the background once the ASPPY Expert
+        // persona is active, so the first "Run ASP" doesn't pay the ~10MB cost.
+        let aspWarmStarted = false;
+        function maybeWarmAspRuntime() {
+            if (aspWarmStarted) return;
+            if (activePersonaName !== 'ASPPY Expert') return;
+            if (!window.SynapseASP || !window.SynapseASP.preload) return;
+            aspWarmStarted = true;
+            window.SynapseASP.preload(() => {}).catch(() => { aspWarmStarted = false; });
+        }
+
+        /* Forms inside the sandboxed iframe can't actually navigate (srcdoc has
+           no URL), so a normal submit just clears the fields. We inject this
+           bridge: it intercepts submits, serialises the form, and posts it back
+           to the parent, which re-runs ASPPY with those values as the request. */
+        const ASP_FORM_BRIDGE =
+            '<script>(function(){' +
+            'document.addEventListener("submit",function(e){' +
+            'var f=e.target; if(!f||f.tagName!=="FORM") return;' +
+            'e.preventDefault();' +
+            'var method=(f.getAttribute("method")||"GET").toUpperCase();' +
+            'var pairs=[];' +
+            'var els=f.elements;' +
+            'for(var i=0;i<els.length;i++){var el=els[i];' +
+            'if(!el.name) continue;' +
+            'var t=(el.type||"").toLowerCase();' +
+            'if((t==="checkbox"||t==="radio")&&!el.checked) continue;' +
+            'if(t==="submit"||t==="button"||t==="file"||t==="reset") continue;' +
+            'pairs.push(encodeURIComponent(el.name)+"="+encodeURIComponent(el.value));}' +
+            // Include the clicked submit button name/value (ASP relies on it,
+            // e.g. action=calculate). Prefer e.submitter, fall back to focus.
+            'var sb=e.submitter||document.activeElement;' +
+            'if(sb&&sb.name&&(sb.type==="submit"||sb.tagName==="BUTTON")){pairs.push(encodeURIComponent(sb.name)+"="+encodeURIComponent(sb.value));}' +
+            'parent.postMessage({__aspForm:true,method:method,data:pairs.join("&")},"*");' +
+            '},true);}())<\/script>';
+
+        // Read the simulated-request panel.
+        function readAspRequest() {
+            return {
+                method: (document.getElementById('asp-method').value || 'GET').toUpperCase(),
+                qs: document.getElementById('asp-qs').value || '',
+                form: document.getElementById('asp-form').value || ''
+            };
+        }
+
+        // Enable/disable the form-body field based on the selected method.
+        function syncAspFormField() {
+            const isPost = document.getElementById('asp-method').value === 'POST';
+            document.getElementById('asp-form').disabled = !isPost;
+        }
+
+        // Execute the current ASP source and pipe the rendered HTML into the frame.
+        async function runAspCode() {
+            const frame = document.getElementById('asp-frame');
+            if (!window.SynapseASP) {
+                setAspStatus('ASP runtime (asp-runner.js) failed to load.', true);
+                return;
+            }
+            const reqInfo = readAspRequest();
+            frame.srcdoc = '';
+            setAspStatus('Starting ASP runtime…');
+            try {
+                const result = await window.SynapseASP.run(lastAspCode, {
+                    method: reqInfo.method,
+                    qs: reqInfo.qs,
+                    form: reqInfo.form,
+                    onStatus: (s) => setAspStatus(s)
+                });
+                lastAspBody = result.body || '';
+                // Force a neutral light scheme + inject the form-submit bridge.
+                const forceLight = '<style>:root{color-scheme:light;}html,body{margin:0;background:#fff;}</style>';
+                frame.srcdoc = lastAspBody
+                    ? forceLight + lastAspBody + ASP_FORM_BRIDGE
+                    : forceLight + '<pre style="padding:1rem;font-family:monospace">(no output)</pre>';
+                if (result.error && result.error.trim()) {
+                    setAspStatus(result.error.trim(), true);
+                } else {
+                    setAspStatus('Done. ' + (result.log ? result.log.trim() : 'No errors.'));
+                }
+            } catch (e) {
+                setAspStatus('Run failed: ' + (e.message || e), true);
+            }
+        }
+
+        // A form inside the output was submitted: feed its data into the request
+        // panel (query string for GET, form body for POST) and re-run.
+        function handleAspFormSubmit(payload) {
+            const methodSel = document.getElementById('asp-method');
+            methodSel.value = (payload.method === 'POST') ? 'POST' : 'GET';
+            syncAspFormField();
+            if (payload.method === 'POST') {
+                document.getElementById('asp-form').value = payload.data || '';
+            } else {
+                document.getElementById('asp-qs').value = payload.data || '';
+            }
+            runAspCode();
+        }
+
+        function openAspRunner(code) {
+            lastAspCode = code;
+            lastAspBody = '';
+            // Reset the request panel for a fresh snippet.
+            document.getElementById('asp-method').value = 'GET';
+            document.getElementById('asp-qs').value = '';
+            document.getElementById('asp-form').value = '';
+            syncAspFormField();
+            document.getElementById('asp-frame').srcdoc = '';
+            setAspStatus('Loading…');
+            aspModal.show();
+            runAspCode();   // kick off the run as the modal opens
         }
 
         // `enhance` controls whether per-code-block action buttons (Copy/Preview/
@@ -1215,6 +1446,28 @@
             let fullReply = "";
             let usageData = null;
 
+            // Build the messages payload: inject RAG knowledge base for ASPPY Expert persona
+            // Max RAG chars: 5K (~1.2K tokens). Safety net for the focused ASPPY reference.
+            const RAG_MAX_CHARS = 5000;
+            let payloadMessages = messagesContext;
+            if (activePersonaName === 'ASPPY Expert' && window.RAG_DATA) {
+                let ragContent = window.RAG_DATA;
+                const originalLen = ragContent.length;
+                if (ragContent.length > RAG_MAX_CHARS) {
+                    ragContent = ragContent.substring(0, RAG_MAX_CHARS)
+                        + '\n\n[...documentation truncated to fit model context window — re-run with a larger-context model for full coverage...]';
+                }
+                payloadMessages = messagesContext.map((m, i) => {
+                    if (i === 0 && m.role === 'system') {
+                        return { ...m, content: m.content + '\n\n--- REFERENCE DOCUMENTATION ---\n' + ragContent };
+                    }
+                    return m;
+                });
+                console.log(`RAG injected: ${originalLen.toLocaleString()} chars → ${ragContent.length.toLocaleString()} chars (${Math.ceil(ragContent.length/4).toLocaleString()} est. tokens)`);
+            } else if (activePersonaName === 'ASPPY Expert') {
+                console.warn('ASPPY Expert persona active but RAG_DATA not loaded. Ensure rag-data.js is in the same directory.');
+            }
+
             try {
                 const response = await fetch(url, {
                     method: 'POST',
@@ -1225,7 +1478,7 @@
                     signal: currentAbortController.signal,
                     body: JSON.stringify({
                         model: model,
-                        messages: messagesContext,
+                        messages: payloadMessages,
                         temperature: parseFloat(tempRange.value),
                         stream: true,
                         stream_options: { include_usage: true }
@@ -1427,6 +1680,8 @@
             localStorage.setItem(ACTIVE_PERSONA_KEY, activePersonaName);
             fillPersonaSelect(personaSelect, activePersonaName);
             if (typeof p.temp === 'number') setTemperature(p.temp);
+            // Warm up the in-browser ASP runtime so the first "Run ASP" is instant.
+            maybeWarmAspRuntime();
 
             const hasUserMessages = messagesContext.some(m => m.role === 'user');
             if (hasUserMessages) {
@@ -1505,6 +1760,54 @@
         promptApplyBtn.addEventListener('click', () => {
             const name = savePersonaFromEditor();
             if (name) applyPersona(name);
+        });
+
+        /* ---------- In-browser ASP runner ---------- */
+        const aspModalEl = document.getElementById('asp-modal');
+        const aspFrame   = document.getElementById('asp-frame');
+        aspModal = new bootstrap.Modal(aspModalEl);
+
+        // Stop the rendered ASP output when the modal closes.
+        aspModalEl.addEventListener('hidden.bs.modal', () => {
+            aspFrame.srcdoc = '';
+        });
+
+        // Re-run the same ASP code.
+        document.getElementById('asp-rerun-btn').addEventListener('click', runAspCode);
+
+        // Request panel: run with the values currently in the panel.
+        document.getElementById('asp-run-req-btn').addEventListener('click', runAspCode);
+        document.getElementById('asp-method').addEventListener('change', syncAspFormField);
+        // Enter in any request field triggers a run.
+        ['asp-qs', 'asp-form'].forEach(id => {
+            document.getElementById(id).addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); runAspCode(); }
+            });
+        });
+
+        // Forms submitted inside the output iframe post their data here.
+        window.addEventListener('message', (e) => {
+            if (e.source === aspFrame.contentWindow && e.data && e.data.__aspForm) {
+                handleAspFormSubmit(e.data);
+            }
+        });
+
+        // Copy the ASP source.
+        const aspCopyBtn = document.getElementById('asp-copy-btn');
+        aspCopyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(lastAspCode);
+                aspCopyBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
+            } catch (e) {
+                aspCopyBtn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Failed';
+            }
+            setTimeout(() => aspCopyBtn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy ASP', 1800);
+        });
+
+        // Open the rendered output in a real browser tab.
+        document.getElementById('asp-newtab-btn').addEventListener('click', () => {
+            const blob = new Blob([lastAspBody || '<!-- no output -->'], { type: 'text/html' });
+            window.open(URL.createObjectURL(blob), '_blank');
         });
 
         /* ---------- HTML live preview ---------- */
@@ -1735,6 +2038,9 @@
 
             loadModels();
             userInput.focus();
+
+            // If a session restored the ASPPY Expert persona, warm the ASP runtime.
+            maybeWarmAspRuntime();
         })();
     </script>
 </body>
