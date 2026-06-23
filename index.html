@@ -924,6 +924,10 @@
             return token ? `Bearer ${token}` : 'Bearer local-dev';
         }
 
+        function getAuthHeaderFallback() {
+            return 'Bearer local-dev';
+        }
+
         function saveConnection() {
             localStorage.setItem('synapse-host-' + providerSelect.value, hostInput.value);
             localStorage.setItem('synapse-port-' + providerSelect.value, portInput.value);
@@ -1244,7 +1248,7 @@
                         frag.appendChild(runBtn);
                     }
 
-                    if (isHtml) {
+                    if (isHtml && !isAsp) {
                         // Preview
                         const previewBtn = document.createElement('button');
                         previewBtn.className = 'btn btn-sm btn-primary';
@@ -1515,11 +1519,17 @@
             const provider = providerSelect.value;
             const cfg = getConfigs(provider);
             const name = provider === 'lm-studio' ? 'LM Studio' : 'Ollama';
-            // Try live model list from the OpenAI-compatible /v1/models endpoint
             try {
-                const res = await fetch(cfg.base + '/v1/models', {
+                let res = await fetch(cfg.base + '/v1/models', {
                     headers: { 'Authorization': getAuthHeader() }
                 });
+                if (res.status === 401 && apiTokenInput.value.trim()) {
+                    apiTokenInput.value = '';
+                    saveConnection();
+                    res = await fetch(cfg.base + '/v1/models', {
+                        headers: { 'Authorization': getAuthHeaderFallback() }
+                    });
+                }
                 if (res.ok) {
                     const data = await res.json();
                     const live = (data.data || []).map(m => m.id).filter(Boolean);
