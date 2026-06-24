@@ -18,7 +18,9 @@ const fs = require('fs');
 const path = require('path');
 
 const OUTPUT = path.join(__dirname, 'rag-data.js');
-const MAX_CHARS = 10240;
+// Must match RAG_MAX_CHARS in index.html — content beyond this is truncated
+// at runtime before being injected into the model context.
+const MAX_CHARS = 5000;
 
 const sections = [];
 

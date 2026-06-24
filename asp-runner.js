@@ -1,12 +1,12 @@
 ﻿/* ============================================================================
- * asp-runner.js â€” In-browser Classic ASP/VBScript runtime for Synapse.
+ * asp-runner.js — In-browser Classic ASP/VBScript runtime for Synapse.
  *
  * Adapted from PieterCooreman/ASP-Runner (https://github.com/PieterCooreman/ASP-Runner)
  * which embeds the ASPPY interpreter (37 Python modules) and runs it via Pyodide
  * (Python -> WebAssembly). No server is involved: the browser executes the ASP.
  *
  * Public API (window.SynapseASP):
- *   SynapseASP.run(code, { method, qs, form, cookies, onStatus })
+ *   SynapseASP.run(code, { method, qs, form, onStatus })
  *     -> Promise<{ body, error, log }>
  *   SynapseASP.preload(onStatus) -> Promise  (optionally warm up Pyodide early)
  *
@@ -28,7 +28,7 @@
     if (initPromise) return initPromise;
 
     initPromise = (async function () {
-      onStatus('Loading Pyodide (~10MB, first run only)â€¦');
+      onStatus('Loading Pyodide (~10MB, first run only)…');
 
       // Load the Pyodide loader script from CDN if not already present.
       if (typeof loadPyodide === 'undefined') {
@@ -41,10 +41,10 @@
         });
       }
 
-      onStatus('Initialising Python runtimeâ€¦');
+      onStatus('Initialising Python runtime…');
       pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/' });
 
-      onStatus('Writing ASPPY modulesâ€¦');
+      onStatus('Writing ASPPY modules…');
       var FS = pyodide.FS;
       try { FS.mkdir('/ASPPY'); } catch (e) {}
       try { FS.mkdir('/ASPPY/vm'); } catch (e) {}
@@ -66,10 +66,10 @@
         "sys.path.insert(0, '/ASPPY/vm')\n"
       );
 
-      onStatus('Loading sqlite3â€¦');
+      onStatus('Loading sqlite3…');
       await pyodide.loadPackage('sqlite3');
 
-      onStatus('Importing ASPPYâ€¦');
+      onStatus('Importing ASPPY…');
       // Import ASPPY modules and define the browser-side Server/Session/
       // Application stand-ins. These live in Python globals for later runs.
       pyodide.runPython(BROWSER_BOOTSTRAP_PY);
@@ -268,7 +268,7 @@
     var onStatus = opts.onStatus || noop;
     var py = await initRuntime(onStatus);
 
-    onStatus('Runningâ€¦');
+    onStatus('Running…');
     py.FS.writeFile('/__synapse_asp__.asp', code);
     py.globals.set('_browser_method', opts.method || 'GET');
     py.globals.set('_browser_qs', opts.qs || '');

@@ -17,10 +17,9 @@
     <link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
 
     <!-- Markdown parser + syntax highlighter + HTML sanitizer -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-    <script src="rag-data.js"></script>
     <!-- In-browser ASP/VBScript runtime (ASPPY via Pyodide) — used by the ASPPY Expert persona -->
     <script src="asp-runner.js"></script>
 
@@ -612,9 +611,19 @@
                         <label for="persona-name" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Name</label>
                         <input id="persona-name" type="text" class="form-control form-control-sm" placeholder="e.g. Web Designer">
                     </div>
-                    <div>
+                    <div class="mb-2">
                         <label for="prompt-input" class="form-label small text-uppercase fw-bold opacity-75 mb-1">System prompt</label>
-                        <textarea id="prompt-input" class="form-control font-monospace" rows="7"></textarea>
+                        <textarea id="prompt-input" class="form-control font-monospace" rows="6"></textarea>
+                    </div>
+                    <div>
+                        <label for="rag-input" class="form-label small text-uppercase fw-bold opacity-75 mb-1">
+                            Reference knowledge (RAG)
+                        </label>
+                        <textarea id="rag-input" class="form-control font-monospace" rows="6"
+                            placeholder="Extra reference material appended to the system prompt for this persona."></textarea>
+                        <div class="form-text small opacity-75">
+                            Injected after the system prompt on every request for this persona. Leave empty for none.
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -853,26 +862,181 @@
         const PERSONAS_KEY = 'synapse-personas';
         const ACTIVE_PERSONA_KEY = 'synapse-active-persona';
 
+        /* ---------- Reference knowledge (RAG) ----------
+           Each persona carries an editable `rag` string that is appended to its
+           system prompt on every request (see streamReply). These are just the
+           built-in defaults; users can edit them in the Persona Manager. */
+
+        // BASIC_RAG — a small formatting reference loaded by every non-ASPPY
+        // persona, reminding the model how Synapse renders replies (Markdown +
+        // fenced code blocks + tables). Keeps output clean and copy/preview-ready.
+        const BASIC_RAG = `OUTPUT FORMATTING (Synapse renders replies as sanitized Markdown):
+- Write in Markdown. Use #/##/### headings, **bold**, *italics*, bullet/numbered lists and > blockquotes for structure.
+- ALWAYS put code in fenced code blocks and label the language after the opening backticks (e.g. \`\`\`js, \`\`\`python, \`\`\`html, \`\`\`bash). Synapse adds syntax highlighting and a per-block Copy button from that label.
+- Use one fenced block per file/snippet; do not mix prose inside a code block.
+- For tabular data use Markdown tables (| col | col |) rather than ASCII art.
+- A complete HTML document (starting with <!DOCTYPE html> or <html>) gets a live Preview / Download button, so output full, self-contained HTML when asked for a page.
+- For inline identifiers, keywords or file names use \`single backticks\`.
+- Be concise: lead with the answer, keep explanations tight, and avoid filler.`;
+
+        // Shared formatting reminder reused inside the persona-specific RAGs below.
+        const FMT_NOTE = `FORMATTING: reply in Markdown; put any code in language-labelled fenced blocks; use tables for tabular data; keep inline identifiers in \`backticks\`.`;
+
+        // ---- Persona-specific reference knowledge ----
+        // Each block layers role knowledge on top of the formatting reminder.
+
+        const BLOG_WRITER_RAG = `BLOG WRITING REFERENCE
+- Structure: hook intro → scannable body (## sections, short paragraphs, lists) → takeaway/CTA conclusion.
+- Front-load value; one core idea per section; prefer concrete examples over abstractions.
+- Vary sentence length; use active voice; cut hedging and filler ("very", "really", "in order to").
+- SEO basics: a clear working title, a one-line meta-description-style summary, and natural keyword use (never stuffing).
+- If audience, tone, or length is unclear, ask one quick clarifying question before writing.
+${FMT_NOTE}`;
+
+        const BRAINSTORMER_RAG = `IDEATION REFERENCE
+- Favor quantity and range: combine techniques like SCAMPER, "what if / how might we", first-principles, and analogies from other domains.
+- Cover safe, ambitious, and wildcard options; avoid clustering near the obvious.
+- Output a rapid-fire numbered list; one bold concept name + a one-sentence description each. No long preambles.
+- Don't self-censor early; mark especially unconventional ideas so the user can spot them.
+${FMT_NOTE}`;
+
+        const CLI_LINUX_RAG = `LINUX / SHELL REFERENCE
+- Default to portable POSIX/bash; note when something is GNU-, zsh-, or distro-specific.
+- SAFETY FIRST: flag destructive commands (rm -rf, dd, mkfs, > on files, chmod -R, curl|sh) and suggest a dry-run or backup. Never invent destructive one-liners casually.
+- Prefer quoting variables ("$var"), \`set -euo pipefail\` in scripts, and long-form flags in scripts for readability.
+- Explain non-obvious flags briefly after the command. Show realistic example output when helpful.
+- Mention permissions/sudo only when actually required.
+${FMT_NOTE}`;
+
+        const CODING_RAG = `CODING REFERENCE
+- Give a working, correct solution first; then a short explanation of the key decisions.
+- Match the user's language/framework and existing style; don't introduce dependencies without saying why.
+- Handle edge cases and errors; avoid silent failure. Point out complexity or security concerns when relevant.
+- Keep names clear, functions small, comments meaningful (explain "why", not "what").
+- When changing existing code, show only the relevant diff/snippet unless a full file is requested.
+${FMT_NOTE}`;
+
+        const DATA_ANALYST_RAG = `DATA ANALYSIS REFERENCE (Python: pandas / numpy / matplotlib)
+- Prefer vectorized pandas/numpy over Python loops; use \`.loc\`/\`.iloc\` correctly and avoid chained-assignment (SettingWithCopy) pitfalls.
+- Inspect first: dtypes, nulls, duplicates, ranges; state assumptions about the data shape.
+- Explain each transformation in one line so the pipeline is auditable; keep steps reproducible.
+- For plots use matplotlib; always label axes/title and pick a chart type that fits the question.
+- Note when a method mutates vs returns a copy.
+${FMT_NOTE}`;
+
+        const MUSICIAN_RAG = `MUSIC & SONGWRITING REFERENCE
+- Put chords, tablature, and notation in fenced code blocks so spacing/alignment is preserved.
+- Use standard chord symbols (e.g. Cmaj7, Am, G/B) and Nashville numbers when discussing progressions abstractly.
+- Reference theory accurately: keys, diatonic chords, common progressions (I–V–vi–IV, ii–V–I), modes, song forms (verse/chorus/bridge, AABA, 12-bar blues).
+- For lyrics, note meter/rhyme scheme; for production, give practical, genre-aware tips.
+- State the key and tempo/feel when proposing musical ideas.
+${FMT_NOTE}`;
+
+        const PROOFREADER_RAG = `COPY-EDITING REFERENCE
+- Preserve the author's voice and meaning; fix grammar, spelling, punctuation, and awkward phrasing — don't rewrite for style unless asked.
+- Watch common errors: subject–verb agreement, comma splices, its/it's, their/there/they're, dangling modifiers, tense consistency, parallelism.
+- Output order: (1) the corrected text, then (2) a concise bulleted list of the specific changes and why.
+- If a sentence is ambiguous, flag it instead of guessing the intended meaning.
+${FMT_NOTE}`;
+
+        const PYTHON_DEV_RAG = `PYTHON REFERENCE
+- Target modern Python (3.10+): type hints, f-strings, dataclasses, pathlib, comprehensions, context managers.
+- Follow PEP 8 and idiomatic style ("Pythonic"); prefer the standard library and minimal dependencies.
+- Handle errors with specific exceptions; use \`with\` for resources; avoid mutable default arguments.
+- Note time/space complexity for non-trivial algorithms; suggest generators for large data.
+- ALWAYS wrap Python in \`\`\`python fenced blocks; give brief architectural context before longer code.
+${FMT_NOTE}`;
+
+        const RUBBER_DUCK_RAG = `RUBBER-DUCK DEBUGGING REFERENCE
+- DO NOT hand over the full solution upfront. Guide the user to find it themselves.
+- Ask focused diagnostic questions: What did you expect vs. observe? What's the exact error/stack trace? What changed last? What have you already tried?
+- Suggest isolating the problem: minimal reproduction, print/log key state, bisect, check assumptions and boundary conditions.
+- Point out logical flaws or smells you notice, but as hints/questions rather than fixes.
+- Only reveal more direct help if the user is clearly stuck after guidance.
+${FMT_NOTE}`;
+
+        const HTML_BUILDER_RAG = `SINGLE-FILE WEBSITE REFERENCE
+- Output EXACTLY ONE complete index.html in a single \`\`\`html block — no commentary, no extra blocks.
+- ALL CSS in one <style> in <head>; ALL JS in one <script> before </body>. Never link external .css/.js.
+- Use Bootstrap 5 via CDN (CSS link in <head>, bundle JS before </body>); add Bootstrap Icons CDN if icons are needed.
+- No external asset files: use inline SVG, CSS gradients, or data URIs for images.
+- Make it responsive (viewport meta + Bootstrap grid/utilities), accessible (semantic tags, alt text, labels), and ready to save-and-open.
+- A full HTML document triggers Synapse's live Preview / Download buttons, so ensure it renders standalone.`;
+
+        const TEACHER_RAG = `TEACHING REFERENCE
+- Meet the learner's level; define jargon on first use and build from what they likely already know.
+- Use analogies and concrete, worked step-by-step examples; one concept at a time.
+- Check understanding with a guiding question or a small exercise rather than just asserting facts.
+- If the user is trying to learn a skill, scaffold and hint — don't just hand over the final answer.
+- Summarize key takeaways at the end; suggest a next step to practice.
+${FMT_NOTE}`;
+
+        const SUMMARIZER_RAG = `SUMMARIZATION REFERENCE
+- Capture only what's in the source: core arguments, key facts, conclusions. Add NO outside information or opinion.
+- Preserve the original meaning, proportion, and any important caveats/numbers; don't overstate.
+- Default format: a one-line gist, then bullet points of key points, with **bold** for the most important terms.
+- Scale length to the source and any requested limit; lead with the most important point.
+- If the text is ambiguous or contradictory, note it rather than resolving it yourself.
+${FMT_NOTE}`;
+
+        const WEB_DESIGNER_RAG = `WEB / UI DESIGN REFERENCE
+- Give opinionated, practical guidance grounded in fundamentals: visual hierarchy, spacing rhythm (consistent scale), alignment, and contrast.
+- Typography: limit typefaces, set a clear type scale and comfortable line-height/measure (~45–75 chars).
+- Color: build from a small palette; ensure WCAG AA contrast (4.5:1 body text); don't rely on color alone to convey meaning.
+- Layout: use a grid, generous whitespace, and mobile-first responsive behavior.
+- Accessibility: semantic HTML, focus states, labels/alt text, adequate tap targets.
+- When giving HTML/CSS, prefer clean, modern, responsive markup in fenced blocks.
+${FMT_NOTE}`;
+
+        // ASPPY_RAG — moved inline from the former rag-data.js. Loaded by the
+        // ASPPY Expert persona. (Content intentionally unchanged.)
+        const ASPPY_RAG = `
+--- Section 1 ---
+ASPPY is a Python-based Classic ASP/VBScript runtime — runs .asp files without IIS or COM. Here it runs in an in-browser sandbox.
+
+WRITE SIMPLE, SINGLE-FILE PAGES:
+- One .asp file, plain top-to-bottom code. Read input (Request.QueryString / Request.Form), do the logic, Response.Write the HTML.
+- No MVC, no routing, no JSON API, no React, no AJAX, no separate files. Just a page that renders HTML.
+- Standard ASP objects work as usual: Response, Request, Server, Session, Application.
+
+--- Section 2 ---
+SANDBOX LIMITS — these are NOT available, do not use them:
+- No database (no ADODB / SQLite / SQL).
+- No file system (no Scripting.FileSystemObject, no reading/writing files).
+- No network / email / external services (no MSXML2.ServerXMLHTTP, no CDO.Message).
+- Server.CreateObject only supports "Scripting.Dictionary" and "VBScript.RegExp".
+Keep all data IN MEMORY: use arrays and Scripting.Dictionary. Hard-code seed/sample data in the script.
+
+--- Section 3 ---
+STYLING + CORRECT VBSCRIPT:
+- Style every page with the latest Bootstrap 5 from a CDN: link the Bootstrap CSS in <head>, use Bootstrap classes/components (container, card, table, form-control, btn, etc.). Extra custom CSS goes in one small inline <style>.
+- Use & for string concatenation (NOT +). Use Set for object assignment. Dim your variables.
+- HTML-encode user-supplied output with Server.HTMLEncode().
+- Validate numbers with IsNumeric() then CInt() before using them.
+- VBScript And does NOT short-circuit (every operand is evaluated). Don't combine an array-length check and an index access in one And; nest the Ifs instead.
+- For self-submitting forms use method="GET" or method="POST" to the same page and read Request.QueryString / Request.Form.
+`;
+
         // Built-in starter personas for local AI-Lab.
 		const DEFAULT_PERSONAS = [
 			// `temp` is the recommended default temperature for each persona:
 			// low (≈0.2–0.4) for precise/code/factual work, higher (≈0.8–1.0) for creative work.
-			{ name: "None", temp: 0.6, prompt: "" },
-			{ name: "Blog Writer",      temp: 0.8, prompt: "You are a skilled blog writer. Write engaging, well-structured articles in Markdown with clear headings, short paragraphs and a friendly, confident tone. Ask for the target audience if it is unclear." },
-			{ name: "Brainstormer",       temp: 1.0, prompt: "You are a creative brainstorming partner. Generate diverse, lateral-thinking ideas based on the user's prompt. Format your output as a rapid-fire list of concepts with one-sentence descriptions. Prioritize quantity and variety." },
-			{ name: "CLI & Linux Expert", temp: 0.2, prompt: "You are a strict Linux and command-line expert. Provide safe, efficient shell commands and bash scripts. Briefly explain the flags and syntax used. Always wrap commands in fenced code blocks." },
-			{ name: "Coding Assistant", temp: 0.3, prompt: DEFAULT_SYSTEM_PROMPT },
-			{ name: "Data Analyst",       temp: 0.3, prompt: "You are a data analyst specializing in Python (pandas, numpy). Write clean, efficient code for data manipulation and visualization. Briefly explain your data transformations. Enclose code in fenced blocks." },
-			{ name: "Musician",         temp: 1.0, prompt: "You are an experienced musician and songwriter. Help with lyrics, chord progressions, song structure, music theory and production tips. Use Markdown; put chords or tablature in code blocks." },
-			{ name: "Proofreader",        temp: 0.2, prompt: "You are a strict copy editor. Correct grammar, punctuation, and awkward phrasing in the provided text. Output the corrected text first, followed by a concise bulleted list of the specific changes you made." },
-			{ name: "Python Developer",    temp: 0.2, prompt: "You are an expert Python developer who favors clean, vanilla, dependency-minimal code. You write performant, modern Python. Provide brief architectural context before your code. IMPORTANT: You must ALWAYS wrap Python code inside triple backtick (```python) Markdown blocks." 
+			{ name: "None", temp: 0.6, prompt: "", rag: "" },
+			{ name: "Blog Writer",      temp: 0.8, prompt: "You are a skilled blog writer. Write engaging, well-structured articles in Markdown with clear headings, short paragraphs and a friendly, confident tone. Ask for the target audience if it is unclear.", rag: BLOG_WRITER_RAG },
+			{ name: "Brainstormer",       temp: 1.0, prompt: "You are a creative brainstorming partner. Generate diverse, lateral-thinking ideas based on the user's prompt. Format your output as a rapid-fire list of concepts with one-sentence descriptions. Prioritize quantity and variety.", rag: BRAINSTORMER_RAG },
+			{ name: "CLI & Linux Expert", temp: 0.2, prompt: "You are a strict Linux and command-line expert. Provide safe, efficient shell commands and bash scripts. Briefly explain the flags and syntax used. Always wrap commands in fenced code blocks.", rag: CLI_LINUX_RAG },
+			{ name: "Coding Assistant", temp: 0.3, prompt: DEFAULT_SYSTEM_PROMPT, rag: CODING_RAG },
+			{ name: "Data Analyst",       temp: 0.3, prompt: "You are a data analyst specializing in Python (pandas, numpy). Write clean, efficient code for data manipulation and visualization. Briefly explain your data transformations. Enclose code in fenced blocks.", rag: DATA_ANALYST_RAG },
+			{ name: "Musician",         temp: 1.0, prompt: "You are an experienced musician and songwriter. Help with lyrics, chord progressions, song structure, music theory and production tips. Use Markdown; put chords or tablature in code blocks.", rag: MUSICIAN_RAG },
+			{ name: "Proofreader",        temp: 0.2, prompt: "You are a strict copy editor. Correct grammar, punctuation, and awkward phrasing in the provided text. Output the corrected text first, followed by a concise bulleted list of the specific changes you made.", rag: PROOFREADER_RAG },
+			{ name: "Python Developer",    temp: 0.2, prompt: "You are an expert Python developer who favors clean, vanilla, dependency-minimal code. You write performant, modern Python. Provide brief architectural context before your code. IMPORTANT: You must ALWAYS wrap Python code inside triple backtick (```python) Markdown blocks.", rag: PYTHON_DEV_RAG
 			},
-			{ name: "Rubber Duck (Debug)",temp: 0.4, prompt: "You are a 'rubber duck' debugging assistant. Do not write the full solution immediately. Ask probing questions, point out logical flaws in my code, and guide me to find the answer myself. Be analytical and concise." },
-			{ name: "Single-File HTML Builder", temp: 0.3, prompt: "You build complete, self-contained single-file websites, using Bootstrap 5 (latest version, via CDN). ALWAYS output exactly ONE complete index.html document and nothing else. Put ALL CSS inside a single <style> tag in the <head>, and ALL JavaScript inside a single <script> tag before </body> — never reference external .css or .js files. Output ONLY one fenced ```html code block: no explanations, no commentary, no design critique, and no multiple code blocks. The file must be ready to save and open directly in a browser. Do not use placeholder asset paths that require external files; if you need images, use inline SVG, CSS gradients, or data URIs. Write clean, modern, responsive markup." },
-			{ name: "Teacher",            temp: 0.6, prompt: "You are a patient and encouraging teacher. Break down complex concepts into simple, easy-to-understand explanations. Use analogies, step-by-step examples, and ask guiding questions to check for understanding. Adapt your tone to be supportive and do not simply give away the answer if the user is trying to learn how to solve a problem themselves." },
-			{ name: "Text Summarizer",    temp: 0.3, prompt: "You are a precise summarization tool. Distill the provided text into its core arguments and key facts. Use bullet points and bold text for readability. Strictly avoid adding external information or your own opinions." },
-			{ name: "Web Designer",     temp: 0.5, prompt: "You are a senior web/UI designer. Give opinionated, practical design advice on layout, spacing, color, typography and accessibility. When you produce HTML/CSS, wrap it in fenced code blocks and prefer clean, modern, responsive markup." },
-			{ name: "ASPPY Expert", temp: 0.3, prompt: "You write simple Classic ASP/VBScript pages. Always produce ONE single .asp file with straightforward top-to-bottom code: read input with Request.QueryString/Request.Form, do the logic, and Response.Write the HTML as you go. Style every page with the latest Bootstrap 5 from a CDN (link the Bootstrap CSS in the <head> and use Bootstrap classes/components) so the output always looks clean; keep any extra CSS in one small inline <style>. Write correct VBScript: & for string concatenation (not +), Set for object assignment, Dim your variables; HTML-encode user output with Server.HTMLEncode(); validate numbers with IsNumeric() then CInt(). Remember VBScript And does NOT short-circuit. Keep data in-memory (arrays, Scripting.Dictionary) — do NOT use a database, file system, or external services, because the code runs in a sandbox without them. Output the whole page inside ONE fenced ```asp code block, nothing else." },
+			{ name: "Rubber Duck (Debug)",temp: 0.4, prompt: "You are a 'rubber duck' debugging assistant. Do not write the full solution immediately. Ask probing questions, point out logical flaws in my code, and guide me to find the answer myself. Be analytical and concise.", rag: RUBBER_DUCK_RAG },
+			{ name: "Single-File HTML Builder", temp: 0.3, prompt: "You build complete, self-contained single-file websites, using Bootstrap 5 (latest version, via CDN). ALWAYS output exactly ONE complete index.html document and nothing else. Put ALL CSS inside a single <style> tag in the <head>, and ALL JavaScript inside a single <script> tag before </body> — never reference external .css or .js files. Output ONLY one fenced ```html code block: no explanations, no commentary, no design critique, and no multiple code blocks. The file must be ready to save and open directly in a browser. Do not use placeholder asset paths that require external files; if you need images, use inline SVG, CSS gradients, or data URIs. Write clean, modern, responsive markup.", rag: HTML_BUILDER_RAG },
+			{ name: "Teacher",            temp: 0.6, prompt: "You are a patient and encouraging teacher. Break down complex concepts into simple, easy-to-understand explanations. Use analogies, step-by-step examples, and ask guiding questions to check for understanding. Adapt your tone to be supportive and do not simply give away the answer if the user is trying to learn how to solve a problem themselves.", rag: TEACHER_RAG },
+			{ name: "Text Summarizer",    temp: 0.3, prompt: "You are a precise summarization tool. Distill the provided text into its core arguments and key facts. Use bullet points and bold text for readability. Strictly avoid adding external information or your own opinions.", rag: SUMMARIZER_RAG },
+			{ name: "Web Designer",     temp: 0.5, prompt: "You are a senior web/UI designer. Give opinionated, practical design advice on layout, spacing, color, typography and accessibility. When you produce HTML/CSS, wrap it in fenced code blocks and prefer clean, modern, responsive markup.", rag: WEB_DESIGNER_RAG },
+			{ name: "ASPPY Expert", temp: 0.3, prompt: "You write simple Classic ASP/VBScript pages. Always produce ONE single .asp file with straightforward top-to-bottom code: read input with Request.QueryString/Request.Form, do the logic, and Response.Write the HTML as you go. Style every page with the latest Bootstrap 5 from a CDN (link the Bootstrap CSS in the <head> and use Bootstrap classes/components) so the output always looks clean; keep any extra CSS in one small inline <style>. Write correct VBScript: & for string concatenation (not +), Set for object assignment, Dim your variables; HTML-encode user output with Server.HTMLEncode(); validate numbers with IsNumeric() then CInt(). Remember VBScript And does NOT short-circuit. Keep data in-memory (arrays, Scripting.Dictionary) — do NOT use a database, file system, or external services, because the code runs in a sandbox without them. Output the whole page inside ONE fenced ```asp code block, nothing else.", rag: ASPPY_RAG },
 		];
 
         function loadPersonas() {
@@ -886,8 +1050,15 @@
             } catch (e) { console.warn('Could not load personas', e); }
             if (!list) list = DEFAULT_PERSONAS.slice();
             if (!list.some(p => p.name === 'None')) {
-                list.unshift({ name: "None", temp: 0.6, prompt: "" });
+                list.unshift({ name: "None", temp: 0.6, prompt: "", rag: "" });
             }
+            // Migrate personas saved before the per-persona RAG feature: give
+            // built-ins their default RAG, and any custom persona an empty one.
+            list.forEach(p => {
+                if (typeof p.rag === 'string') return;
+                const builtin = DEFAULT_PERSONAS.find(d => d.name === p.name);
+                p.rag = builtin ? builtin.rag : '';
+            });
             return list;
         }
         function savePersonas() {
@@ -898,11 +1069,8 @@
         let activePersonaName = localStorage.getItem(ACTIVE_PERSONA_KEY) || personas[0].name;
         // Normalize in case the stored active persona was deleted/renamed.
         if (!personas.some(p => p.name === activePersonaName)) activePersonaName = personas[0].name;
-        function getActivePersona() {
-            return personas.find(p => p.name === activePersonaName) || personas[0];
-        }
         // SYSTEM_PROMPT stays the single source of truth used by the rest of the app.
-        let SYSTEM_PROMPT = getActivePersona().prompt;
+        let SYSTEM_PROMPT = (personas.find(p => p.name === activePersonaName) || personas[0]).prompt;
 
         const DEFAULT_CONFIGS = {
             'lm-studio': { host: "127.0.0.1", port: "1234" },
@@ -915,17 +1083,43 @@
             return `http://${host}:${port}`;
         }
 
-        function getConfigs(provider) {
-            return { base: getBase(provider), models: [] };
-        }
+        const FALLBACK_AUTH_HEADER = 'Bearer local-dev';
 
         function getAuthHeader() {
             const token = apiTokenInput.value.trim();
-            return token ? `Bearer ${token}` : 'Bearer local-dev';
+            return token ? `Bearer ${token}` : FALLBACK_AUTH_HEADER;
         }
 
-        function getAuthHeaderFallback() {
-            return 'Bearer local-dev';
+        /* Builds the "can't reach the server" guidance shared by the model-list
+           loader and the streaming error handler. `mode` is 'models' or 'chat'
+           and only tweaks the wording for the local-server case. */
+        function buildConnectionHelp(provider, mode) {
+            const name = provider === 'lm-studio' ? 'LM Studio' : 'Ollama';
+            const base = getBase(provider);
+            const host = hostInput.value.trim();
+            const isRemote = host && host !== '127.0.0.1' && host !== 'localhost';
+            const isFileProtocol = location.protocol === 'file:';
+            const isHttps = location.protocol === 'https:';
+            let msg;
+            if (isRemote && isHttps) {
+                msg = 'HTTPS pages cannot connect to HTTP servers (Mixed Content). '
+                    + 'Serve Synapse over HTTP locally: <code>npx serve .</code>';
+            } else if (isRemote && isFileProtocol) {
+                msg = `Cannot reach <strong>${host}:${portInput.value}</strong> from a local file. `
+                    + 'Serve Synapse over HTTP first: <code>npx serve .</code> or <code>python -m http.server</code>. '
+                    + 'Then make sure your server allows CORS from your IP.';
+            } else if (isRemote) {
+                msg = `${name} is not reachable at ${base}. Ensure the remote server is running and allows CORS connections from your browser.`;
+            } else if (provider === 'lm-studio') {
+                msg = mode === 'chat'
+                    ? "Ensure LM Studio's local server is running and CORS is enabled."
+                    : `${name} is not reachable at ${base}. Start the local server (enable CORS) and click the refresh button.`;
+            } else {
+                msg = mode === 'chat'
+                    ? 'Ensure Ollama is running and the OLLAMA_ORIGINS="*" environment flag is set.'
+                    : `${name} is not reachable at ${base}. Start the local server (enable CORS) and click the refresh button.`;
+            }
+            return { name, isRemote, msg };
         }
 
         function saveConnection() {
@@ -966,10 +1160,55 @@
             return [];
         }
 
+        let quotaWarned = false;
+
+        function isQuotaError(e) {
+            return e && (e.name === 'QuotaExceededError'
+                || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+                || e.code === 22 || e.code === 1014);
+        }
+
+        // Returns a copy of the chats with inline base64 image data stripped from
+        // message content. Images are the main quota hog; dropping the data URLs
+        // (replaced with a small placeholder) lets the rest of the history persist.
+        function chatsWithoutImageData(list) {
+            return list.map(chat => ({
+                ...chat,
+                messages: chat.messages.map(m => {
+                    if (!Array.isArray(m.content)) return m;
+                    return {
+                        ...m,
+                        content: m.content.map(part =>
+                            (part.type === 'image_url')
+                                ? { type: 'text', text: '[image attachment not saved — exceeded storage quota]' }
+                                : part)
+                    };
+                })
+            }));
+        }
+
         function saveChats() {
             try {
                 localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
-            } catch (e) { console.warn('Could not save chats', e); }
+                return;
+            } catch (e) {
+                if (!isQuotaError(e)) { console.warn('Could not save chats', e); return; }
+            }
+            // Quota hit: retry without the bulky inline image data.
+            try {
+                localStorage.setItem(CHATS_KEY, JSON.stringify(chatsWithoutImageData(chats)));
+                if (!quotaWarned) {
+                    quotaWarned = true;
+                    console.warn('localStorage quota exceeded — image attachments were dropped from saved history (current chats still show them).');
+                    setStatus('error', 'Storage full: image attachments were not saved to history.');
+                }
+            } catch (e2) {
+                console.warn('Could not save chats even after stripping images', e2);
+                if (!quotaWarned) {
+                    quotaWarned = true;
+                    alert('Browser storage is full. Recent conversations may not be saved. Delete some chats to free space.');
+                }
+            }
         }
 
         function getActiveChat() {
@@ -1137,7 +1376,6 @@
                                 text += part.text || '';
                             } else if (part.type === 'image_url' && part.image_url?.url) {
                                 const url = part.image_url.url;
-                                const nameMatch = url.match(/data:image\/[^;]+;base64,/);
                                 attachments.push({ name: 'Image', isImage: true, dataUrl: url });
                             }
                         }
@@ -1517,17 +1755,17 @@
 
         async function loadModels() {
             const provider = providerSelect.value;
-            const cfg = getConfigs(provider);
+            const base = getBase(provider);
             const name = provider === 'lm-studio' ? 'LM Studio' : 'Ollama';
             try {
-                let res = await fetch(cfg.base + '/v1/models', {
+                let res = await fetch(base + '/v1/models', {
                     headers: { 'Authorization': getAuthHeader() }
                 });
                 if (res.status === 401 && apiTokenInput.value.trim()) {
                     apiTokenInput.value = '';
                     saveConnection();
-                    res = await fetch(cfg.base + '/v1/models', {
-                        headers: { 'Authorization': getAuthHeaderFallback() }
+                    res = await fetch(base + '/v1/models', {
+                        headers: { 'Authorization': FALLBACK_AUTH_HEADER }
                     });
                 }
                 if (res.ok) {
@@ -1543,21 +1781,7 @@
                 fillModelDropdown([], 'Backend error from ' + name);
                 setStatus('error', name + ' responded with an error.');
             } catch (e) {
-                const host = hostInput.value.trim();
-                const isRemote = host && host !== '127.0.0.1' && host !== 'localhost';
-                const isFileProtocol = location.protocol === 'file:';
-                const isHttps = location.protocol === 'https:';
-                let msg = '';
-                if (isRemote && isHttps) {
-                    msg = `HTTPS pages cannot connect to HTTP servers (Mixed Content). `
-                        + `Serve Synapse over HTTP locally: <code>npx serve .</code>`;
-                } else if (isRemote && isFileProtocol) {
-                    msg = 'Serve Synapse over HTTP first (npx serve .) — browsers block remote requests from file:// URLs.';
-                } else if (isRemote) {
-                    msg = `${name} is not reachable at ${cfg.base}. Ensure the server is running and allows CORS from your IP.`;
-                } else {
-                    msg = `${name} is not reachable at ${cfg.base}. Start the local server (enable CORS) and click the refresh button.`;
-                }
+                const { isRemote, msg } = buildConnectionHelp(provider, 'models');
                 fillModelDropdown([], isRemote ? 'Remote server unreachable' : name + ' offline — start it & refresh');
                 setStatus('offline', msg);
             }
@@ -1664,13 +1888,13 @@
             clearAttachments();
             userInput.value = '';
             userInput.style.height = 'auto';
-            await streamReply(userMsgElement);
+            await streamReply();
 
             // Update chat name after first user message
             updateChatName();
         }
 
-        async function streamReply(userMsgElement) {
+        async function streamReply() {
             userInput.disabled = true;
             sendBtn.classList.add('d-none');
             cancelBtn.classList.remove('d-none');
@@ -1686,33 +1910,35 @@
 
             currentAbortController = new AbortController();
             const provider = providerSelect.value;
-            const url = getConfigs(provider).base + '/v1/chat/completions';
+            const url = getBase(provider) + '/v1/chat/completions';
             const model = modelSelect.value;
 
             const startTime = performance.now();
             let fullReply = "";
             let usageData = null;
 
-            // Build the messages payload: inject RAG knowledge base for ASPPY Expert persona
-            // Max RAG chars: 5K (~1.2K tokens). Safety net for the focused ASPPY reference.
-            const RAG_MAX_CHARS = 5000;
+            // Build the messages payload: append the active persona's editable
+            // reference knowledge (RAG) to the system prompt. Capped to keep the
+            // context window in check (~RAG_MAX_CHARS / 4 ≈ tokens).
+            const RAG_MAX_CHARS = 6000;
             let payloadMessages = messagesContext;
-            if (activePersonaName === 'ASPPY Expert' && window.RAG_DATA) {
-                let ragContent = window.RAG_DATA;
+            const activeRag = (personas.find(p => p.name === activePersonaName) || {}).rag || '';
+            if (activeRag.trim()) {
+                let ragContent = activeRag;
                 const originalLen = ragContent.length;
                 if (ragContent.length > RAG_MAX_CHARS) {
                     ragContent = ragContent.substring(0, RAG_MAX_CHARS)
-                        + '\n\n[...documentation truncated to fit model context window — re-run with a larger-context model for full coverage...]';
+                        + '\n\n[...reference truncated to fit model context window — shorten it in the Persona Manager, or use a larger-context model...]';
                 }
                 payloadMessages = messagesContext.map((m, i) => {
                     if (i === 0 && m.role === 'system') {
-                        return { ...m, content: m.content + '\n\n--- REFERENCE DOCUMENTATION ---\n' + ragContent };
+                        const base = m.content || '';
+                        const sep = base.trim() ? base + '\n\n' : '';
+                        return { ...m, content: sep + '--- REFERENCE KNOWLEDGE ---\n' + ragContent };
                     }
                     return m;
                 });
-                console.log(`RAG injected: ${originalLen.toLocaleString()} chars → ${ragContent.length.toLocaleString()} chars (${Math.ceil(ragContent.length/4).toLocaleString()} est. tokens)`);
-            } else if (activePersonaName === 'ASPPY Expert') {
-                console.warn('ASPPY Expert persona active but RAG_DATA not loaded. Ensure rag-data.js is in the same directory.');
+                console.log(`RAG injected for "${activePersonaName}": ${originalLen.toLocaleString()} chars → ${ragContent.length.toLocaleString()} chars (${Math.ceil(ragContent.length/4).toLocaleString()} est. tokens)`);
             }
 
             try {
@@ -1767,23 +1993,25 @@
                     }
                 }
 
-                const timeTaken = ((performance.now() - startTime) / 1000).toFixed(2);
+                const elapsedSec = (performance.now() - startTime) / 1000;
+                const timeTaken = elapsedSec.toFixed(2);
                 messagesContext.push({ role: "assistant", content: fullReply });
 
                 // Generation is 100% complete: now add the code-block action
                 // buttons (Copy / Preview / Download).
                 renderMarkdown(botMsgElement, fullReply, true);
 
-                /* Telemetry */
+                /* Telemetry — guard against divide-by-zero for instant replies. */
+                const perSec = (tokens) => elapsedSec > 0 ? (tokens / elapsedSec).toFixed(1) : '∞';
                 let metaText = `⏱ ${timeTaken}s`;
                 if (usageData) {
                     const total = usageData.total_tokens || 0;
                     const completion = usageData.completion_tokens || 0;
                     if (total > 0) metaText += ` · ${total} tok`;
-                    if (completion > 0) metaText += ` · ${(completion / timeTaken).toFixed(1)} t/s`;
+                    if (completion > 0) metaText += ` · ${perSec(completion)} t/s`;
                 } else {
                     const est = Math.ceil(fullReply.split(/\s+/).length * 1.3);
-                    metaText += ` · ~${est} tok · ~${(est / timeTaken).toFixed(1)} t/s`;
+                    metaText += ` · ~${est} tok · ~${perSec(est)} t/s`;
                 }
 
                 appendCopyMeta(botMsgElement, fullReply, metaText);
@@ -1803,27 +2031,14 @@
                 } else {
                     console.error("Connection Error:", error);
                     botMsgElement.className = 'message system-error alert alert-danger mb-0';
-                    const host = hostInput.value.trim();
-                    const isRemote = host && host !== '127.0.0.1' && host !== 'localhost';
-                    const isFileProtocol = location.protocol === 'file:';
-                    const isHttps = location.protocol === 'https:';
-                    let help = '';
-                    if (isRemote && isHttps) {
-                        help = `HTTPS pages cannot connect to HTTP servers (Mixed Content). `
-                            + 'Serve Synapse over HTTP locally: <code>npx serve .</code>';
-                    } else if (isRemote && isFileProtocol) {
-                        help = `Cannot reach <strong>${host}:${portInput.value}</strong> from a local file. `
-                            + 'Serve Synapse over HTTP first: <code>npx serve .</code> or <code>python -m http.server</code>. '
-                            + 'Then make sure your server allows CORS from your IP.';
-                    } else if (isRemote) {
-                        help = `Cannot reach <strong>${host}:${portInput.value}</strong>. `
-                            + 'Ensure the remote server is running and allows CORS connections from your browser.';
-                    } else if (provider === 'lm-studio') {
-                        help = "Ensure LM Studio's local server is running and CORS is enabled.";
-                    } else {
-                        help = 'Ensure Ollama is running and the OLLAMA_ORIGINS="*" environment flag is set.';
-                    }
-                    botMsgElement.innerHTML = `Cannot connect. ${help}<br><small class="text-muted">${error.message}</small>`;
+                    const { msg: help } = buildConnectionHelp(provider, 'chat');
+                    // Trusted help text is HTML; the raw error message is rendered
+                    // as text to avoid injecting unsanitized content.
+                    botMsgElement.innerHTML = `Cannot connect. ${help}<br>`;
+                    const errLine = document.createElement('small');
+                    errLine.className = 'text-muted';
+                    errLine.textContent = error.message;
+                    botMsgElement.appendChild(errLine);
                     messagesContext.pop();
                     setStatus('error');
                     setFavicon('idle');
@@ -1850,12 +2065,7 @@
             }
             const bubbles = chatHistory.querySelectorAll('.bot-message');
             if (bubbles.length) bubbles[bubbles.length - 1].remove();
-            await streamReply(null);
-        }
-
-        /* ---------- Clear conversation ---------- */
-        function clearChat() {
-            createNewChat();
+            await streamReply();
         }
 
         /* ---------- Export conversation ---------- */
@@ -1906,6 +2116,7 @@
         const personaEditSelect = document.getElementById('persona-edit-select');
         const personaName       = document.getElementById('persona-name');
         const promptInput        = document.getElementById('prompt-input');
+        const ragInput           = document.getElementById('rag-input');
         const promptSaveBtn      = document.getElementById('prompt-save-btn');
         const promptApplyBtn     = document.getElementById('prompt-apply-btn');
         const personaNewBtn      = document.getElementById('persona-new-btn');
@@ -1965,6 +2176,7 @@
             personaEditSelect.value = p.name;
             personaName.value = p.name;
             promptInput.value = p.prompt;
+            ragInput.value = p.rag || '';
         }
 
         promptModalEl.addEventListener('show.bs.modal', () => {
@@ -1979,6 +2191,7 @@
         personaNewBtn.addEventListener('click', () => {
             personaName.value = '';
             promptInput.value = '';
+            ragInput.value = BASIC_RAG;   // seed new personas with the basic formatting RAG
             personaName.focus();
         });
 
@@ -2001,11 +2214,18 @@
         function savePersonaFromEditor() {
             const name = personaName.value.trim();
             const prompt = promptInput.value.trim();
+            const rag = ragInput.value;   // preserve whitespace/newlines as-is
             if (!name)   { alert('Please enter a persona name.');   personaName.focus(); return null; }
             if (!prompt) { alert('Please enter a system prompt.');  promptInput.focus(); return null; }
             const existing = personas.find(p => p.name === name);
-            if (existing) existing.prompt = prompt;          // update
-            else personas.push({ name, prompt });            // create
+            if (existing) {
+                existing.prompt = prompt;                    // update (keep its temp)
+                existing.rag = rag;
+            } else {
+                // New persona: seed with the current slider temperature so it
+                // gets restored like the built-ins do.
+                personas.push({ name, prompt, rag, temp: parseFloat(tempRange.value) });
+            }
             savePersonas();
             refreshPersonaUI();
             fillPersonaSelect(personaEditSelect, name);
@@ -2142,7 +2362,7 @@
         cancelBtn.addEventListener('click', () => currentAbortController?.abort());
         sendBtn.addEventListener('click', sendMessage);
         regenerateBtn.addEventListener('click', regenerate);
-        clearBtn.addEventListener('click', clearChat);
+        clearBtn.addEventListener('click', createNewChat);
         refreshBtn.addEventListener('click', loadModels);
         document.getElementById('export-md-btn').addEventListener('click', exportMarkdown);
         document.getElementById('export-json-btn').addEventListener('click', exportJSON);
@@ -2306,6 +2526,9 @@
                 activeChatId = chats[0].id;
                 localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
             } else {
+                // Fresh install: restore saved host/port/token before creating
+                // the first chat (which snapshots the connection settings).
+                loadConnection();
                 createNewChat();
                 loadModels();
                 userInput.focus();
