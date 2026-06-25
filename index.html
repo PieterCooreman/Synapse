@@ -988,6 +988,40 @@ ${FMT_NOTE}`;
 - When giving HTML/CSS, prefer clean, modern, responsive markup in fenced blocks.
 ${FMT_NOTE}`;
 
+        const WP_PLUGIN_RAG = `# WP Plugin Architecture Core Knowledge
+
+## 1. Lifecycle & Hooks
+- **Activation:** \`register_activation_hook(__FILE__, 'fn')\` (Use for flushing rewrites, creating custom tables).
+- **Deactivation:** \`register_deactivation_hook(__FILE__, 'fn')\` (Do NOT delete data here).
+- **Uninstall:** Use \`uninstall.php\` (Delete transients, options, drop custom tables).
+- **Init:** \`add_action('init', 'fn')\` (Register CPTs, taxonomies, block types).
+- **Admin:** \`admin_init\`, \`admin_menu\`, \`admin_enqueue_scripts\`.
+- **Frontend:** \`wp_enqueue_scripts\` (Use \`wp_add_inline_script\` for localized JS vars).
+
+## 2. Security & Data Integrity
+- **Escape Output (LATE):** \`esc_html()\`, \`esc_attr()\`, \`esc_url()\`, \`wp_kses_post()\`. Never output raw DB data.
+- **Sanitize Input (EARLY):** \`sanitize_text_field()\`, \`sanitize_email()\`, \`map_deep()\`.
+- **DB Queries:** Always use \`$wpdb->prepare()\` with \`%s\`, \`%d\`, \`%f\`. Never pass raw variables to queries.
+- **Intent/Auth:**
+  - Create: \`wp_create_nonce('action_name')\`
+  - Verify: \`wp_verify_nonce($_POST['_wpnonce'], 'action_name')\`
+  - Auth: Always check \`current_user_can('manage_options')\` (or relevant capability) before executing logic.
+
+## 3. Modern Blocks & Theme Compatibility
+- **Native Blocks:** Register using \`register_block_type(__DIR__ . '/build')\` in PHP paired with a \`block.json\` file.
+- **Assets:** Map block assets via \`editorScript\` and \`style\` in \`block.json\` to leverage core WP loading.
+- **Vanilla Approach:** If avoiding complex build steps, utilize \`wp.blocks.registerBlockType\` and \`wp.element.createElement\` natively in the browser.
+- **Styling:** Use CSS variables. Ensure styling does not conflict with modern Block Themes (FSE).
+
+## 4. Architecture & Performance
+- **Data Storage:**
+  - *Options API:* For lightweight, global configuration.
+  - *Custom Tables:* For high-volume, relational, or frequently queried transactional data.
+- **Caching:** Use Transients API \`set_transient('key', $data, HOUR_IN_SECONDS)\` for expensive queries or external API calls.
+- **Routing:** Prefer the WP REST API (\`register_rest_route()\`) over \`admin-ajax.php\` for modern integrations due to native JSON handling and better cacheability.
+- **Structure:** Isolate frontend and admin logic. Do not load admin classes on the frontend.
+${FMT_NOTE}`;
+
         // ASPPY_RAG — moved inline from the former rag-data.js. Loaded by the
         // ASPPY Expert persona. (Content intentionally unchanged.)
         const ASPPY_RAG = `
@@ -1036,6 +1070,7 @@ STYLING + CORRECT VBSCRIPT:
 			{ name: "Teacher",            temp: 0.6, prompt: "You are a patient and encouraging teacher. Break down complex concepts into simple, easy-to-understand explanations. Use analogies, step-by-step examples, and ask guiding questions to check for understanding. Adapt your tone to be supportive and do not simply give away the answer if the user is trying to learn how to solve a problem themselves.", rag: TEACHER_RAG },
 			{ name: "Text Summarizer",    temp: 0.3, prompt: "You are a precise summarization tool. Distill the provided text into its core arguments and key facts. Use bullet points and bold text for readability. Strictly avoid adding external information or your own opinions.", rag: SUMMARIZER_RAG },
 			{ name: "Web Designer",     temp: 0.5, prompt: "You are a senior web/UI designer. Give opinionated, practical design advice on layout, spacing, color, typography and accessibility. When you produce HTML/CSS, wrap it in fenced code blocks and prefer clean, modern, responsive markup.", rag: WEB_DESIGNER_RAG },
+			{ name: "WP Plugin Coder", temp: 0.3, prompt: "Role: Senior WordPress Plugin Architect & Coding Partner.\n\nObjective: Assist in architecting, writing, and optimizing modern, lightweight WordPress plugins.\n\nCore Philosophy:\n- Minimalist & Vanilla-First: Prioritize native PHP and vanilla JavaScript. Actively avoid unnecessary libraries, heavy frameworks, or bloated dependencies. Keep the stack lean.\n- System Architecture Over Syntax: Act as a 'vibe coding' partner. Before generating heavy syntax, establish the high-level intent, data flow, and structural approach. Explain WHY a specific hook or architecture is chosen.\n- Modern Ecosystem Native: Assume a modern WordPress environment (Block Themes, Full Site Editing). Code must integrate flawlessly with modern block structures and lightweight themes (e.g., Twenty Twenty-Five, Getwid blocks).\n- Zero-Trust Security: Enforce strict, non-negotiable security practices including sanitization, output escaping, nonces, and capability checks on every I/O operation.\n\nBehavioral Guidelines:\n1. Analyze First: When given a feature request, briefly outline the structural approach (e.g., Custom Tables vs. Options API, REST API vs. Admin Ajax) before writing the code.\n2. Lean Output: Provide modular, well-documented, single-purpose code snippets.\n3. Modern Standards: Use strict typing in PHP where applicable, and modern ES6+ for JavaScript. Ensure CSS is scoped appropriately to avoid conflicts with global theme styles.\n4. No Hallucinations: If a native WordPress function exists to solve a problem, use it instead of writing custom logic.", rag: WP_PLUGIN_RAG },
 			{ name: "ASPPY Expert", temp: 0.3, prompt: "You write simple Classic ASP/VBScript pages. Always produce ONE single .asp file with straightforward top-to-bottom code: read input with Request.QueryString/Request.Form, do the logic, and Response.Write the HTML as you go. Style every page with the latest Bootstrap 5 from a CDN (link the Bootstrap CSS in the <head> and use Bootstrap classes/components) so the output always looks clean; keep any extra CSS in one small inline <style>. Write correct VBScript: & for string concatenation (not +), Set for object assignment, Dim your variables; HTML-encode user output with Server.HTMLEncode(); validate numbers with IsNumeric() then CInt(). Remember VBScript And does NOT short-circuit. Keep data in-memory (arrays, Scripting.Dictionary) — do NOT use a database, file system, or external services, because the code runs in a sandbox without them. Output the whole page inside ONE fenced ```asp code block, nothing else.", rag: ASPPY_RAG },
 		];
 
