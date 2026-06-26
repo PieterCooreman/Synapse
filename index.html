@@ -1548,16 +1548,24 @@ STYLING + CORRECT VBSCRIPT:
                     const copyDone = '<i class="bi bi-check2"></i>' + lbl('Copied');
                     copyBtn.innerHTML = copyIdle;
                     copyBtn.title = 'Copy ' + (isHtml ? 'HTML' : 'code');
+                    const copyFail = '<i class="bi bi-x-lg"></i>' + lbl('Failed');
                     copyBtn.onclick = async () => {
-                        try {
-                            await navigator.clipboard.writeText(codeEl.innerText);
+                        const ok = await copyTextToClipboard(codeEl.innerText);
+                        if (ok) {
                             copyBtn.innerHTML = copyDone;
                             copyBtn.classList.replace('btn-secondary', 'btn-success');
                             setTimeout(() => {
                                 copyBtn.innerHTML = copyIdle;
                                 copyBtn.classList.replace('btn-success', 'btn-secondary');
                             }, 1500);
-                        } catch (e) { console.warn('Copy failed', e); }
+                        } else {
+                            copyBtn.innerHTML = copyFail;
+                            copyBtn.classList.replace('btn-secondary', 'btn-danger');
+                            setTimeout(() => {
+                                copyBtn.innerHTML = copyIdle;
+                                copyBtn.classList.replace('btn-danger', 'btn-secondary');
+                            }, 1500);
+                        }
                     };
                     frag.appendChild(copyBtn);
                     return frag;
@@ -1873,19 +1881,23 @@ STYLING + CORRECT VBSCRIPT:
             copyBtn.className = 'btn btn-sm btn-outline-secondary py-0 px-2';
             copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
             copyBtn.onclick = async () => {
-                try {
-                    const clone = botMsgElement.cloneNode(true);
-                    clone.querySelector('.message-meta')?.remove();
-                    const item = new ClipboardItem({
-                        'text/html':  new Blob([clone.innerHTML], { type: 'text/html' }),
-                        'text/plain': new Blob([fullReply],       { type: 'text/plain' })
-                    });
-                    await navigator.clipboard.write([item]);
-                    copyBtn.innerHTML = '<i class="bi bi-check2"></i> Copied';
-                } catch (err) {
-                    await navigator.clipboard.writeText(fullReply);
-                    copyBtn.innerHTML = '<i class="bi bi-check2"></i> Copied';
+                let ok = false;
+                if (navigator.clipboard && window.isSecureContext) {
+                    try {
+                        const clone = botMsgElement.cloneNode(true);
+                        clone.querySelector('.message-meta')?.remove();
+                        const item = new ClipboardItem({
+                            'text/html':  new Blob([clone.innerHTML], { type: 'text/html' }),
+                            'text/plain': new Blob([fullReply],       { type: 'text/plain' })
+                        });
+                        await navigator.clipboard.write([item]);
+                        ok = true;
+                    } catch (err) { /* fall through to plain-text helper */ }
                 }
+                if (!ok) ok = await copyTextToClipboard(fullReply);
+                copyBtn.innerHTML = ok
+                    ? '<i class="bi bi-check2"></i> Copied'
+                    : '<i class="bi bi-x-lg"></i> Failed';
                 setTimeout(() => copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy', 1800);
             };
             metaDiv.appendChild(copyBtn);
@@ -2118,6 +2130,38 @@ STYLING + CORRECT VBSCRIPT:
             return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         }
 
+        /* Copy text to the clipboard with a fallback. navigator.clipboard is
+           only available in secure contexts (https:// or localhost); when
+           Synapse is opened from file:// or served over plain http:// on a LAN
+           host, it is undefined and the copy silently fails. Fall back to a
+           hidden <textarea> + document.execCommand('copy'). Resolves to true
+           on success, false otherwise. */
+        async function copyTextToClipboard(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    return true;
+                } catch (e) { /* fall through to legacy path */ }
+            }
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.top = '-9999px';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                return ok;
+            } catch (e) {
+                console.warn('Copy failed', e);
+                return false;
+            }
+        }
+
         function exportJSON() {
             download(`synapse-chat-${stamp()}.json`,
                 JSON.stringify(messagesContext, null, 2),
@@ -2310,12 +2354,10 @@ STYLING + CORRECT VBSCRIPT:
         // Copy the ASP source.
         const aspCopyBtn = document.getElementById('asp-copy-btn');
         aspCopyBtn.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(lastAspCode);
-                aspCopyBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
-            } catch (e) {
-                aspCopyBtn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Failed';
-            }
+            const ok = await copyTextToClipboard(lastAspCode);
+            aspCopyBtn.innerHTML = ok
+                ? '<i class="bi bi-check2 me-1"></i>Copied'
+                : '<i class="bi bi-x-lg me-1"></i>Failed';
             setTimeout(() => aspCopyBtn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy ASP', 1800);
         });
 
@@ -2346,12 +2388,10 @@ STYLING + CORRECT VBSCRIPT:
         // Copy the previewed HTML to the clipboard.
         const previewCopyBtn = document.getElementById('preview-copy-btn');
         previewCopyBtn.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(lastPreviewHtml);
-                previewCopyBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
-            } catch (e) {
-                previewCopyBtn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Failed';
-            }
+            const ok = await copyTextToClipboard(lastPreviewHtml);
+            previewCopyBtn.innerHTML = ok
+                ? '<i class="bi bi-check2 me-1"></i>Copied'
+                : '<i class="bi bi-x-lg me-1"></i>Failed';
             setTimeout(() => previewCopyBtn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy HTML', 1800);
         });
 
