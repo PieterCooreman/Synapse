@@ -2055,6 +2055,10 @@ ${FMT_NOTE}`;
                 const decoder = new TextDecoder("utf-8");
                 let buffer = "";
 
+                let lastRenderTime = 0;
+                const RENDER_THROTTLE_MS = 70;
+                let pendingRender = false;
+
                 while (true) {
                     const { value, done } = await reader.read();
                     if (done) break;
@@ -2071,10 +2075,24 @@ ${FMT_NOTE}`;
                                 const parsed = JSON.parse(cleaned.slice(6));
                                 if (parsed.choices?.[0]?.delta?.content) {
                                     fullReply += parsed.choices[0].delta.content;
-                                    // Render markdown live, but withhold code-block
-                                    // action buttons until generation completes.
-                                    renderMarkdown(botMsgElement, fullReply, false);
-                                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                                    // Throttle live markdown rendering to avoid
+                                    // re-parsing/sanitizing the entire reply on every token,
+                                    // which causes Chrome to crash at high token rates.
+                                    const now = performance.now();
+                                    if (now - lastRenderTime >= RENDER_THROTTLE_MS) {
+                                        lastRenderTime = now;
+                                        renderMarkdown(botMsgElement, fullReply, false);
+                                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                                    } else if (!pendingRender) {
+                                        pendingRender = true;
+                                        const delay = RENDER_THROTTLE_MS - (now - lastRenderTime);
+                                        setTimeout(() => {
+                                            pendingRender = false;
+                                            lastRenderTime = performance.now();
+                                            renderMarkdown(botMsgElement, fullReply, false);
+                                            chatHistory.scrollTop = chatHistory.scrollHeight;
+                                        }, delay);
+                                    }
                                 }
                                 if (parsed.usage) usageData = parsed.usage;
                             } catch (e) {
