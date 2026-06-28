@@ -2058,6 +2058,7 @@ ${FMT_NOTE}`;
                 let lastRenderTime = 0;
                 const RENDER_THROTTLE_MS = 70;
                 let pendingRender = false;
+                let renderTimerId = 0;
 
                 while (true) {
                     const { value, done } = await reader.read();
@@ -2086,7 +2087,7 @@ ${FMT_NOTE}`;
                                     } else if (!pendingRender) {
                                         pendingRender = true;
                                         const delay = RENDER_THROTTLE_MS - (now - lastRenderTime);
-                                        setTimeout(() => {
+                                        renderTimerId = setTimeout(() => {
                                             pendingRender = false;
                                             lastRenderTime = performance.now();
                                             renderMarkdown(botMsgElement, fullReply, false);
@@ -2101,6 +2102,10 @@ ${FMT_NOTE}`;
                         }
                     }
                 }
+
+                // Cancel any pending throttled render so it can't fire after
+                // the final enhance=true render and wipe out action buttons.
+                if (pendingRender) { clearTimeout(renderTimerId); pendingRender = false; }
 
                 const elapsedSec = (performance.now() - startTime) / 1000;
                 const timeTaken = elapsedSec.toFixed(2);
