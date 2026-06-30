@@ -1821,6 +1821,12 @@ ${FMT_NOTE}`;
             if (enhance) enhanceCodeBlocks(el);
         }
 
+        // Fast streaming render — skips DOMPurify (expensive) during live output.
+        // The full renderMarkdown() runs once at the end to sanitize & add buttons.
+        function renderMarkdownStream(el, text) {
+            el.innerHTML = marked.parse(text);
+        }
+
         /* ---------- Model dropdown ---------- */
         function fillModelDropdown(models, emptyText) {
             modelSelect.innerHTML = '';
@@ -2056,7 +2062,7 @@ ${FMT_NOTE}`;
                 let buffer = "";
 
                 let lastRenderTime = 0;
-                const RENDER_THROTTLE_MS = 70;
+                const RENDER_THROTTLE_MS = 300;
                 let pendingRender = false;
                 let renderTimerId = 0;
 
@@ -2076,22 +2082,27 @@ ${FMT_NOTE}`;
                                 const parsed = JSON.parse(cleaned.slice(6));
                                 if (parsed.choices?.[0]?.delta?.content) {
                                     fullReply += parsed.choices[0].delta.content;
-                                    // Throttle live markdown rendering to avoid
-                                    // re-parsing/sanitizing the entire reply on every token,
-                                    // which causes Chrome to crash at high token rates.
+                                    // Throttle live rendering to ~3/sec. Uses the
+                                    // fast path (no DOMPurify) to avoid expensive DOM
+                                    // allocation during streaming; the full sanitize
+                                    // + enhance runs once at the end.
                                     const now = performance.now();
                                     if (now - lastRenderTime >= RENDER_THROTTLE_MS) {
                                         lastRenderTime = now;
-                                        renderMarkdown(botMsgElement, fullReply, false);
-                                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                                        renderMarkdownStream(botMsgElement, fullReply);
+                                        requestAnimationFrame(() => {
+                                            chatHistory.scrollTop = chatHistory.scrollHeight;
+                                        });
                                     } else if (!pendingRender) {
                                         pendingRender = true;
                                         const delay = RENDER_THROTTLE_MS - (now - lastRenderTime);
                                         renderTimerId = setTimeout(() => {
                                             pendingRender = false;
                                             lastRenderTime = performance.now();
-                                            renderMarkdown(botMsgElement, fullReply, false);
-                                            chatHistory.scrollTop = chatHistory.scrollHeight;
+                                            renderMarkdownStream(botMsgElement, fullReply);
+                                            requestAnimationFrame(() => {
+                                                chatHistory.scrollTop = chatHistory.scrollHeight;
+                                            });
                                         }, delay);
                                     }
                                 }
