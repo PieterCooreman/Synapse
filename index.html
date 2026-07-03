@@ -307,7 +307,6 @@
             width: 260px;
             flex: 0 0 260px;
             overflow-y: auto;
-            border-right: 1px solid var(--bs-border-color);
             background: var(--bs-body-bg);
         }
         #chat-sidebar .chat-list-item {
@@ -316,7 +315,6 @@
             justify-content: space-between;
             padding: 0.5rem 0.75rem;
             cursor: pointer;
-            border-bottom: 1px solid var(--bs-border-color);
             transition: background 0.15s;
         }
         #chat-sidebar .chat-list-item:hover { background: var(--bs-tertiary-bg); }
@@ -461,6 +459,10 @@
                         data-bs-toggle="modal" data-bs-target="#prompt-modal">
                     <i class="bi bi-sliders"></i>
                 </button>
+                <button id="settings-btn" class="btn btn-sm btn-outline-secondary border-0" title="Settings"
+                        data-bs-toggle="modal" data-bs-target="#settings-modal">
+                    <i class="bi bi-gear"></i>
+                </button>
                 <div class="btn-group">
                     <button class="btn btn-sm btn-outline-secondary border-0 dropdown-toggle" title="Export conversation"
                             data-bs-toggle="dropdown" aria-expanded="false">
@@ -481,68 +483,6 @@
                    class="btn btn-sm btn-outline-secondary border-0" title="View source on GitHub">
                     <i class="bi bi-github"></i>
                 </a>
-            </div>
-        </div>
-
-        <!-- Settings -->
-        <div class="card-body border-bottom py-2 px-4">
-            <div class="row g-2 align-items-end">
-                <div class="col-12 col-sm-2">
-                    <label for="persona-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Persona</label>
-                    <div class="input-group input-group-sm">
-                        <select id="persona-select" class="form-select form-select-sm"></select>
-                        <button id="manage-personas-btn" class="btn btn-outline-secondary" title="Manage personas"
-                                data-bs-toggle="modal" data-bs-target="#prompt-modal">
-                            <i class="bi bi-pencil-square"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="col-12 col-sm-5">
-                    <label for="provider-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Backend</label>
-                    <div class="connection-fields">
-                        <select id="provider-select" class="form-select form-select-sm" style="flex:0 0 auto; width:auto;">
-                            <option value="lm-studio">LM Studio</option>
-                            <option value="ollama">Ollama</option>
-                        </select>
-                        <input id="host-input" type="text" class="form-control form-control-sm" placeholder="Host" style="width:130px;" title="Backend host IP address">
-                        <input id="port-input" type="text" class="form-control form-control-sm" placeholder="Port" style="width:65px;" title="Backend port number">
-                    </div>
-                    <div class="connection-fields mt-1">
-                        <input id="api-token-input" type="password" class="form-control form-control-sm" placeholder="API token (optional)" style="width:200px;" title="API token for authentication">
-                    </div>
-                </div>
-                <div class="col-12 col-sm-3">
-                    <label for="model-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Model</label>
-                    <div class="input-group input-group-sm">
-                        <select id="model-select" class="form-select form-select-sm"></select>
-                        <button id="refresh-models-btn" class="btn btn-outline-secondary" title="Refresh model list">
-                            <i class="bi bi-arrow-clockwise"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="col-12 col-sm-2">
-                    <label for="temp-range" class="form-label small text-uppercase fw-bold opacity-75 mb-1">
-                        Temp <span id="temp-value" class="text-primary">0.7</span>
-                        <button type="button" id="temp-help" class="btn btn-link p-0 border-0 align-baseline text-decoration-none ms-1"
-                                style="cursor:help; line-height:1;"
-                                data-bs-toggle="popover" data-bs-trigger="focus" data-bs-html="true"
-                                data-bs-placement="bottom" title="About temperature"
-                                data-bs-content="
-                                    <p class='mb-2'>Controls the <strong>randomness</strong> of the model's word choices.</p>
-                                    <ul class='mb-1 ps-3 small'>
-                                        <li><strong>0.0–0.3</strong> — precise &amp; focused (code, facts)</li>
-                                        <li><strong>0.4–0.7</strong> — balanced (general use)</li>
-                                        <li><strong>0.8–1.0</strong> — creative &amp; varied (writing, brainstorming)</li>
-                                        <li class='text-danger'><strong>Above 1.0</strong> — risky; output can become incoherent</li>
-                                    </ul>
-                                    <p class='mb-0 small text-secondary'>Picking a persona sets a recommended value.</p>">
-                            <i class="bi bi-question-circle text-secondary"></i>
-                        </button>
-                        <i id="temp-warn" class="bi bi-exclamation-triangle-fill text-warning ms-1 d-none"
-                           title="High temperature (above 1.0) can produce incoherent or garbled output."></i>
-                    </label>
-                    <input type="range" id="temp-range" class="form-range" min="0" max="2" step="0.1" value="0.7">
-                </div>
             </div>
         </div>
 
@@ -634,6 +574,81 @@
                     <button id="prompt-apply-btn" class="btn btn-primary" data-bs-dismiss="modal">
                         <i class="bi bi-check2 me-1"></i>Apply &amp; restart chat
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings modal -->
+    <div class="modal fade" id="settings-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear me-2"></i>Settings</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label for="provider-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Backend</label>
+                            <div class="connection-fields">
+                                <select id="provider-select" class="form-select form-select-sm" style="flex:0 0 auto; width:auto;">
+                                    <option value="lm-studio">LM Studio</option>
+                                    <option value="ollama">Ollama</option>
+                                </select>
+                                <input id="host-input" type="text" class="form-control form-control-sm" placeholder="Host" style="width:130px;" title="Backend host IP address">
+                                <input id="port-input" type="text" class="form-control form-control-sm" placeholder="Port" style="width:65px;" title="Backend port number">
+                            </div>
+                            <div class="connection-fields mt-1">
+                                <input id="api-token-input" type="password" class="form-control form-control-sm" placeholder="API token (optional)" style="width:200px;" title="API token for authentication">
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="model-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Model</label>
+                            <div class="input-group input-group-sm">
+                                <select id="model-select" class="form-select form-select-sm"></select>
+                                <button id="refresh-models-btn" class="btn btn-outline-secondary" title="Refresh model list">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="persona-select" class="form-label small text-uppercase fw-bold opacity-75 mb-1">Persona</label>
+                            <div class="input-group input-group-sm">
+                                <select id="persona-select" class="form-select form-select-sm"></select>
+                                <button id="manage-personas-btn" class="btn btn-outline-secondary" title="Manage personas"
+                                        data-bs-toggle="modal" data-bs-target="#prompt-modal">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="temp-range" class="form-label small text-uppercase fw-bold opacity-75 mb-1">
+                                Temp <span id="temp-value" class="text-primary">0.7</span>
+                                <button type="button" id="temp-help" class="btn btn-link p-0 border-0 align-baseline text-decoration-none ms-1"
+                                        style="cursor:help; line-height:1;"
+                                        data-bs-toggle="popover" data-bs-trigger="focus" data-bs-html="true"
+                                        data-bs-placement="bottom" title="About temperature"
+                                        data-bs-content="
+                                            <p class='mb-2'>Controls the <strong>randomness</strong> of the model's word choices.</p>
+                                            <ul class='mb-1 ps-3 small'>
+                                                <li><strong>0.0–0.3</strong> — precise &amp; focused (code, facts)</li>
+                                                <li><strong>0.4–0.7</strong> — balanced (general use)</li>
+                                                <li><strong>0.8–1.0</strong> — creative &amp; varied (writing, brainstorming)</li>
+                                                <li class='text-danger'><strong>Above 1.0</strong> — risky; output can become incoherent</li>
+                                            </ul>
+                                            <p class='mb-0 small text-secondary'>Picking a persona sets a recommended value.</p>">
+                                    <i class="bi bi-question-circle text-secondary"></i>
+                                </button>
+                                <i id="temp-warn" class="bi bi-exclamation-triangle-fill text-warning ms-1 d-none"
+                                   title="High temperature (above 1.0) can produce incoherent or garbled output."></i>
+                            </label>
+                            <input type="range" id="temp-range" class="form-range" min="0" max="2" step="0.1" value="0.7">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
