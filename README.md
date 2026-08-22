@@ -22,6 +22,7 @@ The whole app — HTML, CSS, and JavaScript — lives in one `index.html` file. 
 - **Live model list** — models are fetched from the provider's `/v1/models` endpoint, with a refresh button.
 - **Personas / prompt manager** — save, edit and switch between named system prompts (Coding Assistant, Web Designer, Blog Writer, Musician, ASPPY Expert, and more, or your own) from a dropdown. Each persona has a recommended default temperature that is applied automatically when you select it.
 - **Per-persona reference knowledge (RAG)** — every persona carries an editable knowledge block that is appended to its system prompt on each request. Built-in personas ship with role-specific guidance (formatting rules, language idioms, design fundamentals, etc.); you can edit it for any persona, or leave it empty, right in the Persona Manager.
+- **Tools / MCP (LM Studio 0.4+)** — toggle the 🔧 button next to the message box to let the model use tools via the Model Context Protocol: web search, browsing, or any other MCP server. Uses the MCP servers you already have installed in LM Studio (`mcp.json`), or remote MCP servers by URL. Tool calls, arguments, results, and the model's reasoning are shown live in the chat as collapsible blocks. Configure integrations in **Settings → Tools / MCP**.
 - **File attachments** — attach files with the paperclip button, **drag-and-drop** onto the input, or **paste** an image from the clipboard. Images are sent for vision-capable models; recognised text/code files are inlined into the message as fenced code blocks. Up to 10 MB per file.
 - **In-browser ASP runner** — with the **ASPPY Expert** persona active, Classic ASP / VBScript code blocks get a **Run ASP** button that executes the page entirely in your browser (no IIS, no server) via the bundled ASPPY runtime running on Pyodide (Python → WebAssembly). Includes a simulated request panel (GET/POST query string & form body), self-submitting form support, and open-in-new-tab.
 - **Voice input** — dictate your message with the microphone button, powered by the browser's native Web Speech API (no libraries or API keys).
@@ -47,6 +48,25 @@ The whole app — HTML, CSS, and JavaScript — lives in one `index.html` file. 
 3. Pick your **Persona**, **Backend** and **Model**, then start chatting.
 
 > **Tip:** for LAN use, enter the IP address and port of the machine running your LLM server (e.g. `192.168.1.100` port `1234`).
+
+### Tools / MCP setup (LM Studio only)
+
+Tools mode sends requests through LM Studio's REST API (`POST /api/v1/chat`) with MCP `integrations`, so **LM Studio executes the tools** — Synapse just displays the activity. Requirements:
+
+1. **LM Studio 0.4.0 or newer** with the local server running.
+2. In LM Studio → **Developer → Server Settings**, enable:
+   - **"Allow calling servers from mcp.json"** — needed for `LM Studio plugin` entries (installed plugins and mcp.json servers).
+   - **"Allow per-request MCPs"** — needed for `Remote MCP URL` entries (hosted MCP servers such as `https://huggingface.co/mcp`).
+3. In Synapse → **Settings → Tools / MCP**, click **Scan LM Studio** — installed plugins are discovered automatically and can be added with one click. Then flip the 🔧 button next to the message box.
+
+Notes:
+
+- **Scan LM Studio** probes the connected instance for installed plugins (LM Studio has no listing API, so Synapse probes a set of well-known ids plus anything you've configured). If your plugin isn't among them, type its id and click the row's 🔍 **Detect** button — that works for *any* id.
+- **LM Studio plugin ids** come in two forms: Hub plugins use `owner/name` (e.g. `lmstudio/wikipedia`, `lmstudio/js-code-sandbox`), and MCP servers you added to LM Studio's `mcp.json` use `mcp/<name>` where `<name>` is the server name shown in LM Studio's MCP editor.
+- The 🔍 **Detect** button fetches an integration's tool list; each tool then shows as a checkbox, so you can tick exactly which ones the model may call — fewer tools also means faster prompt processing.
+- MCP tool definitions eat context. If tool calls fail or replies get cut off, raise the **Context** value in the Tools / MCP settings (8000+ recommended by LM Studio).
+- Tools mode is stateful server-side: multi-turn context is chained via LM Studio's `previous_response_id`. If you enable tools mid-conversation, Synapse sends a one-time compact transcript so the model keeps the context.
+- Use a model with native tool-use support (hammer badge in LM Studio) for best results.
 
 > **Remote / WAN use:** browsers block requests from `file://` to remote servers, and HTTPS pages cannot connect to HTTP servers (Mixed Content). Serve Synapse over HTTP locally (e.g. `npx serve .` or `python -m http.server`), then connect. Your LLM server must also allow CORS connections from your browser's origin.
 
