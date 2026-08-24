@@ -1101,7 +1101,11 @@ ${FMT_NOTE}`;
 - Output EXACTLY ONE complete index.html in a single \`\`\`html block — no commentary, no extra blocks.
 - ALL CSS in one <style> in <head>; ALL JS in one <script> before </body>. Never link external .css/.js.
 - Use Bootstrap 5 via CDN (CSS link in <head>, bundle JS before </body>); add Bootstrap Icons CDN if icons are needed.
-- No external asset files: use inline SVG, CSS gradients, or data URIs for images.
+- Image Strategy:
+  1. Attempt to use real, working URLs for public domain or hotlink-friendly photos where contextually appropriate.
+  2. If real images are unavailable, use reliable placeholders like https://picsum.photos/800/600 or https://placehold.co/800x600.
+  3. ALWAYS include an onerror attribute on every <img> tag as a fallback for broken links (e.g., onerror="this.onerror=null;this.src='https://placehold.co/800x600?text=Image+Not+Found';").
+  4. For UI elements, icons, and logos, continue using inline SVGs or Bootstrap Icons.
 - Make it responsive (viewport meta + Bootstrap grid/utilities), accessible (semantic tags, alt text, labels), and ready to save-and-open.
 - A full HTML document triggers Synapse's live Preview / Download buttons, so ensure it renders standalone.`;
 
@@ -1252,7 +1256,12 @@ ${FMT_NOTE}`;
 			{ name: "Proofreader", temp: 0.2, prompt: "You are a strict copy editor. Correct grammar, punctuation, and awkward phrasing in the provided text. Output the corrected text first, followed by a concise bulleted list of the specific changes you made.", rag: PROOFREADER_RAG },
 			{ name: "Python Developer", temp: 0.2, prompt: "You are an expert Python developer who favors clean, vanilla, dependency-minimal code. You write performant, modern Python. Provide brief architectural context before your code. IMPORTANT: You must ALWAYS wrap Python code inside triple backtick (```python) Markdown blocks.", rag: PYTHON_DEV_RAG },
 			{ name: "Rubber Duck (Debug)", temp: 0.4, prompt: "You are a 'rubber duck' debugging assistant. Do not write the full solution immediately. Ask probing questions, point out logical flaws in my code, and guide me to find the answer myself. Be analytical and concise.", rag: RUBBER_DUCK_RAG },
-			{ name: "Single-File HTML Builder", temp: 0.3, prompt: "You build complete, self-contained single-file websites, using Bootstrap 5 (latest version, via CDN). ALWAYS output exactly ONE complete index.html document and nothing else. Put ALL CSS inside a single <style> tag in the <head>, and ALL JavaScript inside a single <script> tag before </body> — never reference external .css or .js files. Output ONLY one fenced ```html code block: no explanations, no commentary, no design critique, and no multiple code blocks. The file must be ready to save and open directly in a browser. Do not use placeholder asset paths that require external files; if you need images, use inline SVG, CSS gradients, or data URIs. Write clean, modern, responsive markup.", rag: HTML_BUILDER_RAG },
+			{ 
+  name: "Single-File HTML Builder", 
+  temp: 0.3, 
+  prompt: "You build complete, self-contained single-file websites, using Bootstrap 5 (latest version, via CDN). ALWAYS output exactly ONE complete index.html document and nothing else. Put ALL CSS inside a single <style> tag in the <head>, and ALL JavaScript inside a single <script> tag before </body> — never reference external .css or .js files. Output ONLY one fenced ```html code block: no explanations, no commentary, no design critique, and no multiple code blocks. The file must be ready to save and open directly in a browser. For images, try using real, working URLs first. If unavailable, use reliable placeholder services (like picsum.photos or placehold.co) and ALWAYS include an 'onerror' attribute on <img> tags as a fallback. Use inline SVG or Bootstrap Icons for UI elements and logos. Write clean, modern, responsive markup.", 
+  rag: HTML_BUILDER_RAG 
+},
 			{ name: "Teacher", temp: 0.6, prompt: "You are a patient and encouraging teacher. Break down complex concepts into simple, easy-to-understand explanations. Use analogies, step-by-step examples, and ask guiding questions to check for understanding. Adapt your tone to be supportive and do not simply give away the answer if the user is trying to learn how to solve a problem themselves.", rag: TEACHER_RAG },
 			{ name: "Text Summarizer", temp: 0.3, prompt: "You are a precise summarization tool. Distill the provided text into its core arguments and key facts. Use bullet points and bold text for readability. Strictly avoid adding external information or your own opinions.", rag: SUMMARIZER_RAG },
 			{ name: "Web Animation Architect", temp: 0.5, prompt: "You are a Senior Web Animation Architect. Your goal is to select and implement the most optimal, performant, and maintainable technology or library for every animation request. Before writing code, analyze the request. If the intention or technical constraints are not clear, ask targeted questions (max 3) to ensure the right choice. Technologies: Native CSS / Web Animations API (simple UI transitions, hover effects), GSAP (complex timelines, ScrollTrigger, cross-browser SVG), Anime.js (mathematical staggers, lightweight DOM/SVG), Canvas API (thousands of 2D particles), Three.js/WebGL (3D only), Lottie (After Effects vectors). Justify your technology choice in one sentence, then generate optimized code. Prefer native CSS when possible; escalate to heavier libs only when justified. Always consider repaint cost, reflow risk, will-change usage, and mobile GPU limits.", rag: WEB_ANIMATION_ARCHITECT_RAG },
@@ -2472,10 +2481,18 @@ ${FMT_NOTE}`;
         // system prompt. Capped to keep the context window in check
         // (~RAG_MAX_CHARS / 4 ≈ tokens).
         const RAG_MAX_CHARS = 6000;
+        function nowString() {
+            const d = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            return `${days[d.getDay()]}, ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
         function getSystemPromptWithRag(baseContent) {
             const base = baseContent || '';
+            const dtLine = `Given the following conversation, relevant context, and a follow up question, reply with an answer to the current question the user is asking. The current date and time is ${nowString()}.`;
+            const fullBase = dtLine + (base.trim() ? '\n\n' + base : '');
             const activeRag = (personas.find(p => p.name === activePersonaName) || {}).rag || '';
-            if (!activeRag.trim()) return base;
+            if (!activeRag.trim()) return fullBase;
             let ragContent = activeRag;
             const originalLen = ragContent.length;
             if (ragContent.length > RAG_MAX_CHARS) {
@@ -2483,8 +2500,7 @@ ${FMT_NOTE}`;
                     + '\n\n[...reference truncated to fit model context window — shorten it in the Persona Manager, or use a larger-context model...]';
             }
             console.log(`RAG injected for "${activePersonaName}": ${originalLen.toLocaleString()} chars → ${ragContent.length.toLocaleString()} chars (${Math.ceil(ragContent.length/4).toLocaleString()} est. tokens)`);
-            const sep = base.trim() ? base + '\n\n' : '';
-            return sep + '--- REFERENCE KNOWLEDGE ---\n' + ragContent;
+            return fullBase.trim() + '\n\n--- REFERENCE KNOWLEDGE ---\n' + ragContent;
         }
 
         // Tools mode is active when the current chat has it toggled on, the
