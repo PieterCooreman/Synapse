@@ -898,12 +898,34 @@
         const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
         const TEXT_EXTENSIONS = /\.(txt|js|ts|jsx|tsx|py|html|css|scss|less|json|md|csv|xml|yaml|yml|sql|sh|bash|bat|ps1|rb|java|c|cpp|h|hpp|cs|go|rs|swift|php|r|lua|toml|ini|cfg|conf|log|env|gitignore|dockerfile|vue|svelte|astro|coffee|dart|ex|exs|erl|hs|ml|fs|clj|lisp|scm|rkt|zig|nim|d|jl|pl|pm|tcl)$/i;
 
+        const IMG_MAX_DIM = 800;
+        const IMG_JPEG_QUALITY = 0.75;
+
         function readFileAsDataUrl(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = () => resolve(reader.result);
                 reader.onerror = () => reject(reader.error);
                 reader.readAsDataURL(file);
+            });
+        }
+
+        function resizeImageDataUrl(dataUrl) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    let w = img.width, h = img.height;
+                    if (w <= IMG_MAX_DIM && h <= IMG_MAX_DIM) return resolve(dataUrl);
+                    if (w > h) { h = Math.round(h * IMG_MAX_DIM / w); w = IMG_MAX_DIM; }
+                    else       { w = Math.round(w * IMG_MAX_DIM / h); h = IMG_MAX_DIM; }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', IMG_JPEG_QUALITY));
+                };
+                img.onerror = () => reject(new Error('Failed to load image for resize'));
+                img.src = dataUrl;
             });
         }
 
@@ -938,7 +960,8 @@
             }
             const att = { name: file.name, type: file.type, size: file.size, dataUrl: null, isImage: false };
             if (isImageFile(file)) {
-                att.dataUrl = await readFileAsDataUrl(file);
+                const raw = await readFileAsDataUrl(file);
+                att.dataUrl = await resizeImageDataUrl(raw);
                 att.isImage = true;
             } else if (isTextFile(file) && file.size <= 200 * 1024) {
                 const text = await readFileAsText(file);
