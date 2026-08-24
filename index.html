@@ -2936,7 +2936,7 @@ ${FMT_NOTE}`;
                 const prefix = (chat && chat.lastResponseId) ? '' : buildTranscriptPrefix();
                 const fullText = prefix + text;
                 const input = images.length
-                    ? [...images.map(u => ({ type: 'image', data_url: u })), { type: 'message', content: fullText }]
+                    ? [...images.map(u => ({ type: 'image', data_url: u })), { type: 'text', content: fullText }]
                     : fullText;
 
                 const body = {
